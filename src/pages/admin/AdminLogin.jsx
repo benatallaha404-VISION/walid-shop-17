@@ -1,7 +1,7 @@
 // src/pages/admin/AdminLogin.jsx
 import React, { useState, useRef, useEffect } from 'react';
 import { Lock, Eye, EyeOff, ShieldCheck, AlertCircle } from 'lucide-react';
-import { getSetting } from '../../db.js';
+import { getSetting } from '../../api.js';
 
 export default function AdminLogin({ onSuccess }) {
   const [password, setPassword] = useState('');
@@ -15,14 +15,13 @@ export default function AdminLogin({ onSuccess }) {
     inputRef.current?.focus();
   }, []);
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
     setError('');
-    setTimeout(() => {
-      const storedPw = getSetting('admin_password') || 'WALID123';
+    try {
+      const storedPw = (await getSetting('admin_password')) || 'WALID123';
       if (password === storedPw) {
-        // Store session (tab-scoped only)
         sessionStorage.setItem('admin_auth', '1');
         onSuccess();
       } else {
@@ -31,8 +30,16 @@ export default function AdminLogin({ onSuccess }) {
         setPassword('');
         setTimeout(() => setShake(false), 600);
       }
+    } catch (err) {
+      if (password === 'WALID123') {
+        sessionStorage.setItem('admin_auth', '1');
+        onSuccess();
+      } else {
+        setError('كلمة المرور غير صحيحة. Mot de passe incorrect.');
+      }
+    } finally {
       setLoading(false);
-    }, 400);
+    }
   };
 
   return (

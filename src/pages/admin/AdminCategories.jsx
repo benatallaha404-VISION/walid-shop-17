@@ -1,7 +1,7 @@
 // src/pages/admin/AdminCategories.jsx
 import React, { useState, useEffect } from 'react';
 import { Plus, Edit2, Trash2, Tag, Save, X } from 'lucide-react';
-import { getCategories, addCategory, updateCategory, deleteCategory } from '../../db.js';
+import { getCategories, addCategory, updateCategory, deleteCategory } from '../../api.js';
 import { useApp } from '../../context/AppContext.jsx';
 
 export default function AdminCategories() {
@@ -11,9 +11,10 @@ export default function AdminCategories() {
   const [editingId, setEditingId] = useState(null);
   const [editForm, setEditForm] = useState({ name: '', slug: '', active: 1 });
 
-  const loadCategories = () => {
+  const loadCategories = async () => {
     try {
-      setCategories(getCategories());
+      const data = await getCategories();
+      setCategories(Array.isArray(data) ? data : []);
     } catch (e) {
       console.error('Failed to load categories:', e);
     }
@@ -21,20 +22,17 @@ export default function AdminCategories() {
 
   useEffect(() => {
     loadCategories();
-    const handleStoreChange = () => loadCategories();
-    window.addEventListener('walid_shop_store_change', handleStoreChange);
-    return () => window.removeEventListener('walid_shop_store_change', handleStoreChange);
   }, []);
 
-  const handleAdd = (e) => {
+  const handleAdd = async (e) => {
     e.preventDefault();
     if (!newCat.name.trim()) return;
     const slug = newCat.slug.trim() || newCat.name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
 
     try {
-      addCategory(newCat.name.trim(), slug);
+      await addCategory(newCat.name.trim(), slug);
       setNewCat({ name: '', slug: '' });
-      loadCategories();
+      await loadCategories();
       addToast('Catégorie ajoutée!', 'success');
     } catch (err) {
       console.error('Error adding category:', err);
@@ -47,23 +45,23 @@ export default function AdminCategories() {
     setEditForm({ name: cat.name, slug: cat.slug, active: cat.active });
   };
 
-  const handleSaveEdit = (id) => {
+  const handleSaveEdit = async (id) => {
     if (!editForm.name.trim()) return;
     try {
-      updateCategory(id, editForm.name.trim(), editForm.slug.trim(), editForm.active);
+      await updateCategory(id, editForm.name.trim(), editForm.slug.trim(), editForm.active);
       setEditingId(null);
-      loadCategories();
+      await loadCategories();
       addToast('Catégorie mise à jour!', 'success');
     } catch (err) {
       console.error('Error updating category:', err);
     }
   };
 
-  const handleDelete = (id, name) => {
+  const handleDelete = async (id, name) => {
     if (window.confirm(`Supprimer la catégorie "${name}" ?`)) {
       try {
-        deleteCategory(id);
-        loadCategories();
+        await deleteCategory(id);
+        await loadCategories();
         addToast('Catégorie supprimée!', 'success');
       } catch (err) {
         console.error('Error deleting category:', err);

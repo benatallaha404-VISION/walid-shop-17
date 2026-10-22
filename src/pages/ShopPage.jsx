@@ -2,7 +2,7 @@ import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { ShoppingBag, Filter, ChevronRight, ChevronDown, Check } from 'lucide-react';
 import { useApp } from '../context/AppContext.jsx';
-import { getProducts, getCategories, getAllSettings } from '../db.js';
+import { getProducts, getCategories, getAllSettings } from '../api.js';
 import BrandLogosTicker from '../components/BrandLogos.jsx';
 import GoogleMapEmbed from '../components/GoogleMapEmbed.jsx';
 
@@ -167,44 +167,41 @@ function CategoryDropdown({ categories, activeCategory, onSelect }) {
 }
 
 export default function ShopPage() {
-  const { dbReady } = useApp();
   const [searchParams] = useSearchParams();
-  const initialSettings = getAllSettings();
-  const [products, setProducts] = useState(() => getProducts());
-  const [categories, setCategories] = useState(() => getCategories(true));
+  const [products, setProducts] = useState([]);
+  const [categories, setCategories] = useState([]);
   const [activeCategory, setActiveCategory] = useState(null);
   const [sort, setSort] = useState('newest');
-  const [heroData, setHeroData] = useState(() => ({
-    title: initialSettings.hero_title || 'Walid Shop',
-    subtitle: initialSettings.hero_subtitle || 'متجركم المفضل للأناقة والموضة الرجالية',
-    tag: initialSettings.hero_tag || 'Walid Shop Collection',
-    image: initialSettings.hero_image || ''
-  }));
-  const [storeSettings, setStoreSettings] = useState(() => initialSettings);
-  const [loading, setLoading] = useState(false);
+  const [heroData, setHeroData] = useState({
+    title: 'Walid Shop',
+    subtitle: 'متجركم المفضل للأناقة والموضة الرجالية',
+    tag: 'Walid Shop Collection',
+    image: ''
+  });
+  const [storeSettings, setStoreSettings] = useState({});
+  const [loading, setLoading] = useState(true);
 
   const searchQuery = searchParams.get('search') || '';
 
-  const loadData = useCallback(() => {
+  const loadData = useCallback(async () => {
+    setLoading(true);
     try {
-      const cats = getCategories(true);
+      const [cats, prods, allSettings] = await Promise.all([
+        getCategories(true),
+        getProducts({ category: activeCategory, search: searchQuery, sort }),
+        getAllSettings(),
+      ]);
       if (cats) setCategories(cats);
-
-      const prods = getProducts({
-        categoryId: activeCategory,
-        search: searchQuery,
-        sort,
-      });
       if (prods) setProducts(prods);
-
-      const allSettings = getAllSettings();
-      setStoreSettings(allSettings);
-      setHeroData({
-        title: allSettings.hero_title || 'Walid Shop',
-        subtitle: allSettings.hero_subtitle || 'متجركم المفضل للأناقة والموضة الرجالية',
-        tag: allSettings.hero_tag || 'Walid Shop Collection',
-        image: allSettings.hero_image || ''
-      });
+      if (allSettings) {
+        setStoreSettings(allSettings);
+        setHeroData({
+          title: allSettings.hero_title || 'Walid Shop',
+          subtitle: allSettings.hero_subtitle || 'متجركم المفضل للأناقة والموضة الرجالية',
+          tag: allSettings.hero_tag || 'Walid Shop Collection',
+          image: allSettings.hero_image || ''
+        });
+      }
     } catch (e) {
       console.error('Error loading shop data:', e);
     } finally {
@@ -214,10 +211,7 @@ export default function ShopPage() {
 
   useEffect(() => {
     loadData();
-    const handleStoreChange = () => loadData();
-    window.addEventListener('walid_shop_store_change', handleStoreChange);
-    return () => window.removeEventListener('walid_shop_store_change', handleStoreChange);
-  }, [dbReady, loadData]);
+  }, [loadData]);
 
   return (
     <main>

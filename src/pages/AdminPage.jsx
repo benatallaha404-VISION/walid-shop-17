@@ -12,7 +12,6 @@ import AdminSettings from './admin/AdminSettings.jsx';
 import AdminLogin from './admin/AdminLogin.jsx';
 
 export default function AdminPage() {
-  const { dbReady } = useApp();
   const [activeTab, setActiveTab] = useState('dashboard');
   const [mobileOpen, setMobileOpen] = useState(false);
   const [authenticated, setAuthenticated] = useState(
@@ -26,17 +25,17 @@ export default function AdminPage() {
   const renderSection = () => {
     switch (activeTab) {
       case 'dashboard':
-        return <AdminDashboard onNavigate={setActiveTab} key={dbReady ? 'dash-1' : 'dash-0'} />;
+        return <AdminDashboard onNavigate={setActiveTab} />;
       case 'products':
-        return <AdminProducts key={dbReady ? 'prod-1' : 'prod-0'} />;
+        return <AdminProducts />;
       case 'orders':
-        return <AdminOrders key={dbReady ? 'ord-1' : 'ord-0'} />;
+        return <AdminOrders />;
       case 'categories':
-        return <AdminCategories key={dbReady ? 'cat-1' : 'cat-0'} />;
+        return <AdminCategories />;
       case 'wilayas':
-        return <AdminWilayas key={dbReady ? 'wil-1' : 'wil-0'} />;
+        return <AdminWilayas />;
       case 'settings':
-        return <AdminSettings key={dbReady ? 'set-1' : 'set-0'} />;
+        return <AdminSettings />;
       default:
         return <AdminDashboard onNavigate={setActiveTab} />;
     }

@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { CheckCircle, Truck, Home, Building2 } from 'lucide-react';
 import emailjs from 'emailjs-com';
 import { useApp } from '../context/AppContext.jsx';
-import { createOrder, getWilayas, getAllSettings } from '../db.js';
+import { createOrder, getWilayas, getAllSettings } from '../api.js';
 
 export default function CheckoutPage() {
   const { cart, cartTotal, clearCart, addToast } = useApp();
@@ -25,19 +25,19 @@ export default function CheckoutPage() {
     note: '',
   });
 
-  const { dbReady } = useApp();
 
   useEffect(() => {
-    try {
-      const activeWilayas = getWilayas(true);
-      if (activeWilayas && activeWilayas.length > 0) {
-        setWilayas(activeWilayas);
+    const load = async () => {
+      try {
+        const [activeWilayas, s] = await Promise.all([getWilayas(true), getAllSettings()]);
+        if (activeWilayas && activeWilayas.length > 0) setWilayas(activeWilayas);
+        if (s) setSettings(s);
+      } catch (e) {
+        console.error('Error loading checkout data:', e);
       }
-      setSettings(getAllSettings());
-    } catch (e) {
-      console.error('Error loading checkout data:', e);
-    }
-  }, [dbReady]);
+    };
+    load();
+  }, []);
 
   const selectedWilaya = wilayas.find(w => w.name === form.wilaya);
   const deliveryPrice = selectedWilaya?.delivery_price || 0;
@@ -75,7 +75,8 @@ export default function CheckoutPage() {
         total,
       };
 
-      const orderNumber = createOrder(orderData);
+      const res = await createOrder(orderData);
+      const orderNumber = res?.order_number || res?.id || 'CMD';
 
       // Send email via EmailJS
       const serviceId = settings.emailjs_service_id;

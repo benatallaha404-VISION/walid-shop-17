@@ -2,20 +2,17 @@
 import React, { useState, useEffect } from 'react';
 import { Mail, Phone, MapPin, Instagram, Facebook, MessageCircle, ExternalLink, Clock } from 'lucide-react';
 import { useApp } from '../context/AppContext.jsx';
-import { getAllSettings } from '../db.js';
+import { getAllSettings } from '../api.js';
 import GoogleMapEmbed from '../components/GoogleMapEmbed.jsx';
 
 export default function ContactPage() {
-  const { dbReady } = useApp();
   const [settings, setSettings] = useState({});
 
   useEffect(() => {
-    try {
-      setSettings(getAllSettings());
-    } catch (e) {
-      console.error('Error fetching settings in ContactPage:', e);
-    }
-  }, [dbReady]);
+    getAllSettings()
+      .then(data => setSettings(data || {}))
+      .catch(e => console.error('Error fetching settings in ContactPage:', e));
+  }, []);
 
   const cleanPhone = (settings.store_phone || settings.store_whatsapp || '').replace(/[^0-9+]/g, '');
   const cleanWhatsapp = (settings.store_whatsapp || settings.store_phone || '').replace(/[^0-9]/g, '');

@@ -1,7 +1,7 @@
 // src/pages/admin/AdminDashboard.jsx
 import React, { useState, useEffect } from 'react';
 import { ShoppingCart, DollarSign, Clock, Package, XCircle, ArrowRight } from 'lucide-react';
-import { getStats, getOrders } from '../../db.js';
+import { getStats, getOrders } from '../../api.js';
 
 export default function AdminDashboard({ onNavigate }) {
   const [stats, setStats] = useState({
@@ -14,10 +14,11 @@ export default function AdminDashboard({ onNavigate }) {
   });
   const [recentOrders, setRecentOrders] = useState([]);
 
-  const loadDashboard = () => {
+  const loadDashboard = async () => {
     try {
-      setStats(getStats());
-      setRecentOrders(getOrders().slice(0, 7));
+      const [st, ords] = await Promise.all([getStats(), getOrders()]);
+      if (st) setStats(st);
+      if (ords) setRecentOrders(ords.slice(0, 7));
     } catch (e) {
       console.error('Failed to load dashboard data:', e);
     }
@@ -25,9 +26,6 @@ export default function AdminDashboard({ onNavigate }) {
 
   useEffect(() => {
     loadDashboard();
-    const handleStoreChange = () => loadDashboard();
-    window.addEventListener('walid_shop_store_change', handleStoreChange);
-    return () => window.removeEventListener('walid_shop_store_change', handleStoreChange);
   }, []);
 
   const statCards = [

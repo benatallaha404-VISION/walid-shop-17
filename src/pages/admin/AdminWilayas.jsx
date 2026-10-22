@@ -1,7 +1,7 @@
 // src/pages/admin/AdminWilayas.jsx
 import React, { useState, useEffect } from 'react';
 import { Plus, Edit2, Trash2, MapPin, Search, RotateCcw, Save, Check } from 'lucide-react';
-import { getWilayas, addWilaya, updateWilaya, deleteWilaya, resetDefaultWilayas } from '../../db.js';
+import { getWilayas, addWilaya, updateWilaya, deleteWilaya, resetDefaultWilayas } from '../../api.js';
 import { useApp } from '../../context/AppContext.jsx';
 
 export default function AdminWilayas() {
@@ -17,9 +17,10 @@ export default function AdminWilayas() {
   const [editingId, setEditingId] = useState(null);
   const [editForm, setEditForm] = useState({ name: '', delivery_price: 0, active: 1 });
 
-  const loadWilayas = () => {
+  const loadWilayas = async () => {
     try {
-      setWilayas(getWilayas());
+      const data = await getWilayas();
+      setWilayas(Array.isArray(data) ? data : []);
     } catch (e) {
       console.error('Failed to load wilayas:', e);
     }
@@ -27,21 +28,18 @@ export default function AdminWilayas() {
 
   useEffect(() => {
     loadWilayas();
-    const handleStoreChange = () => loadWilayas();
-    window.addEventListener('walid_shop_store_change', handleStoreChange);
-    return () => window.removeEventListener('walid_shop_store_change', handleStoreChange);
   }, []);
 
-  const handleAdd = (e) => {
+  const handleAdd = async (e) => {
     e.preventDefault();
     const cleanName = newName.trim();
     if (!cleanName) return addToast('Veuillez entrer le nom de la wilaya', 'error');
 
     try {
-      addWilaya(cleanName, parseFloat(newPrice) || 0, 1);
+      await addWilaya(cleanName, parseFloat(newPrice) || 0, 1);
       setNewName('');
       setNewPrice(500);
-      loadWilayas();
+      await loadWilayas();
       addToast(`Wilaya "${cleanName}" ajoutée avec succès!`, 'success');
     } catch (err) {
       console.error('Error adding wilaya:', err);
@@ -59,16 +57,16 @@ export default function AdminWilayas() {
     setEditForm({ name: '', delivery_price: 0, active: 1 });
   };
 
-  const saveEdit = (id) => {
+  const saveEdit = async (id) => {
     if (!editForm.name.trim()) return addToast('Le nom ne peut pas être vide', 'error');
     try {
-      updateWilaya(id, {
+      await updateWilaya(id, {
         name: editForm.name.trim(),
         delivery_price: parseFloat(editForm.delivery_price) || 0,
         active: editForm.active
       });
       setEditingId(null);
-      loadWilayas();
+      await loadWilayas();
       addToast('Wilaya mise à jour avec succès!', 'success');
     } catch (err) {
       console.error('Error updating wilaya:', err);
@@ -76,13 +74,12 @@ export default function AdminWilayas() {
     }
   };
 
-  const handleDelete = (id, name) => {
+  const handleDelete = async (id, name) => {
     if (window.confirm(`Supprimer la wilaya "${name}" ?\nهل أنت متأكد من حذف هذه الولاية؟`)) {
       try {
-        deleteWilaya(id);
-        setWilayas(prev => prev.filter(w => w.id !== id));
+        await deleteWilaya(id);
+        await loadWilayas();
         addToast(`Wilaya "${name}" supprimée!`, 'success');
-        setTimeout(loadWilayas, 50);
       } catch (err) {
         console.error('Error deleting wilaya:', err);
         addToast('Erreur lors de la suppression', 'error');
@@ -90,21 +87,21 @@ export default function AdminWilayas() {
     }
   };
 
-  const handleToggleActive = (id, currentActive) => {
+  const handleToggleActive = async (id, currentActive) => {
     try {
-      updateWilaya(id, { active: currentActive === 1 ? 0 : 1 });
-      setWilayas(prev => prev.map(w => w.id === id ? { ...w, active: currentActive === 1 ? 0 : 1 } : w));
+      await updateWilaya(id, { active: currentActive === 1 ? 0 : 1 });
+      await loadWilayas();
       addToast('Statut mis à jour', 'info');
     } catch (err) {
       console.error('Error toggling active:', err);
     }
   };
 
-  const handleResetDefaults = () => {
+  const handleResetDefaults = async () => {
     if (window.confirm('Voulez-vous réinitialiser la liste complète avec les 58 wilayas d\'Algérie par défaut ?\nهل تريد استرجاع قائمة الـ 58 ولاية الافتراضية؟')) {
       try {
-        resetDefaultWilayas();
-        loadWilayas();
+        await resetDefaultWilayas();
+        await loadWilayas();
         addToast('Liste des 58 wilayas restaurée!', 'success');
       } catch (err) {
         console.error('Error resetting wilayas:', err);

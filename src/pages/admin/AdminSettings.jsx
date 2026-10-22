@@ -1,7 +1,7 @@
 // src/pages/admin/AdminSettings.jsx
 import React, { useState, useEffect, useRef } from 'react';
 import { Save, Image, Download, Upload, MapPin, Trash2, Lock, Eye, EyeOff } from 'lucide-react';
-import { getAllSettings, setSetting, getSetting, exportDB, importDB, clearAllProducts, compressImage } from '../../db.js';
+import { getAllSettings, saveSettings as saveAllSettings, setSetting, getSetting, exportDB, importDB, clearAllProducts, compressImage } from '../../api.js';
 import { useApp } from '../../context/AppContext.jsx';
 import GoogleMapEmbed from '../../components/GoogleMapEmbed.jsx';
 
@@ -17,20 +17,18 @@ export default function AdminSettings() {
   const [showPwNew, setShowPwNew] = useState(false);
 
   useEffect(() => {
-    try {
-      setSettings(getAllSettings());
-    } catch (e) {
-      console.error('Failed to load settings:', e);
-    }
+    getAllSettings()
+      .then(s => setSettings(s || {}))
+      .catch(e => console.error('Failed to load settings:', e));
   }, []);
 
   const handleSettingChange = (key, value) => {
     setSettings(prev => ({ ...prev, [key]: value }));
   };
 
-  const saveSettings = () => {
+  const saveSettings = async () => {
     try {
-      Object.entries(settings).forEach(([k, v]) => setSetting(k, v));
+      await saveAllSettings(settings);
       addToast('Paramètres sauvegardés avec succès!', 'success');
     } catch (e) {
       console.error('Error saving settings:', e);
@@ -63,10 +61,10 @@ export default function AdminSettings() {
     }
   };
 
-  const handleClearAllProducts = () => {
+  const handleClearAllProducts = async () => {
     if (window.confirm('Voulez-vous vraiment supprimer TOUS les produits ?\nهل أنت متأكد من حذف جميع المنتجات نهائياً؟ لن تظهر مجدداً ولن يتم إنشاء بيانات وهمية.')) {
       try {
-        clearAllProducts();
+        await clearAllProducts();
         addToast('Tous les produits ont été supprimés!', 'success');
       } catch (err) {
         console.error('Error clearing products:', err);
@@ -74,27 +72,32 @@ export default function AdminSettings() {
     }
   };
 
-  const handleChangePassword = () => {
-    const currentPw = getSetting('admin_password') || 'WALID123';
-    if (!pwOld || !pwNew || !pwConfirm) {
-      addToast('Veuillez remplir tous les champs.', 'error');
-      return;
+  const handleChangePassword = async () => {
+    try {
+      const currentPw = (await getSetting('admin_password')) || 'WALID123';
+      if (!pwOld || !pwNew || !pwConfirm) {
+        addToast('Veuillez remplir tous les champs.', 'error');
+        return;
+      }
+      if (pwOld !== currentPw) {
+        addToast('كلمة المرور الحالية غير صحيحة.', 'error');
+        return;
+      }
+      if (pwNew.length < 4) {
+        addToast('كلمة المرور الجديدة يجب أن تكون 4 أحرف على الأقل.', 'error');
+        return;
+      }
+      if (pwNew !== pwConfirm) {
+        addToast('كلمات المرور الجديدة غير متطابقة.', 'error');
+        return;
+      }
+      await setSetting('admin_password', pwNew);
+      addToast('✅ تم تغيير كلمة المرور بنجاح!', 'success');
+      setPwOld(''); setPwNew(''); setPwConfirm('');
+    } catch (err) {
+      console.error('Failed to change password:', err);
+      addToast('Erreur lors du changement de mot de passe', 'error');
     }
-    if (pwOld !== currentPw) {
-      addToast('كلمة المرور الحالية غير صحيحة.', 'error');
-      return;
-    }
-    if (pwNew.length < 4) {
-      addToast('كلمة المرور الجديدة يجب أن تكون 4 أحرف على الأقل.', 'error');
-      return;
-    }
-    if (pwNew !== pwConfirm) {
-      addToast('كلمات المرور الجديدة غير متطابقة.', 'error');
-      return;
-    }
-    setSetting('admin_password', pwNew);
-    addToast('✅ تم تغيير كلمة المرور بنجاح!', 'success');
-    setPwOld(''); setPwNew(''); setPwConfirm('');
   };
 
   const storeFields = [

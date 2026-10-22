@@ -1,7 +1,7 @@
 // src/pages/admin/AdminOrders.jsx
 import React, { useState, useEffect } from 'react';
 import { Eye, EyeOff, Trash2, ShoppingCart, Search, Filter, Phone, MapPin } from 'lucide-react';
-import { getOrders, updateOrderStatus, deleteOrder } from '../../db.js';
+import { getOrders, updateOrderStatus, deleteOrder } from '../../api.js';
 import { useApp } from '../../context/AppContext.jsx';
 
 export default function AdminOrders() {
@@ -11,9 +11,10 @@ export default function AdminOrders() {
   const [search, setSearch] = useState('');
   const [expanded, setExpanded] = useState(null);
 
-  const loadOrders = () => {
+  const loadOrders = async () => {
     try {
-      setOrders(getOrders());
+      const data = await getOrders();
+      setOrders(Array.isArray(data) ? data : []);
     } catch (e) {
       console.error('Failed to load orders:', e);
     }
@@ -21,16 +22,13 @@ export default function AdminOrders() {
 
   useEffect(() => {
     loadOrders();
-    const handleStoreChange = () => loadOrders();
-    window.addEventListener('walid_shop_store_change', handleStoreChange);
-    return () => window.removeEventListener('walid_shop_store_change', handleStoreChange);
   }, []);
 
-  const handleStatusChange = (id, newStatus) => {
+  const handleStatusChange = async (id, newStatus) => {
     try {
       const order = orders.find(o => o.id === id || o.order_number === id);
       const oldStatus = order?.status;
-      updateOrderStatus(id, newStatus);
+      await updateOrderStatus(id, newStatus);
       setOrders(prev => prev.map(o => (o.id === id || o.order_number === id) ? { ...o, status: newStatus } : o));
       if (newStatus === 'cancelled' && oldStatus !== 'cancelled') {
         addToast('تم إلغاء الطلبية واسترجاع المنتجات إلى المخزون بنجاح!', 'info');
@@ -45,10 +43,10 @@ export default function AdminOrders() {
     }
   };
 
-  const handleDeleteOrder = (id, orderNum) => {
+  const handleDeleteOrder = async (id, orderNum) => {
     if (window.confirm(`Supprimer la commande ${orderNum} ?\nهل أنت متأكد من حذف هذا الطلب؟`)) {
       try {
-        deleteOrder(id);
+        await deleteOrder(id);
         setOrders(prev => prev.filter(o => o.id !== id && o.order_number !== id));
         addToast(`Commande ${orderNum} supprimée!`, 'success');
       } catch (err) {

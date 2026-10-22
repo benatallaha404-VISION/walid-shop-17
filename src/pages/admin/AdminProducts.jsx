@@ -1,7 +1,7 @@
 // src/pages/admin/AdminProducts.jsx
 import React, { useState, useEffect } from 'react';
 import { Plus, Edit2, Trash2, Package, Search, DollarSign } from 'lucide-react';
-import { getAllProductsAdmin, getCategories, addProduct, updateProduct, deleteProduct, clearAllProducts } from '../../db.js';
+import { getAllProductsAdmin, getCategories, addProduct, updateProduct, deleteProduct, clearAllProducts } from '../../api.js';
 import { useApp } from '../../context/AppContext.jsx';
 import ProductModal from './ProductModal.jsx';
 
@@ -14,12 +14,11 @@ export default function AdminProducts() {
   const [search, setSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('');
 
-  const loadData = () => {
+  const loadData = async () => {
     try {
-      const p = getAllProductsAdmin();
-      setProducts(p);
-      const c = getCategories();
-      setCategories(c);
+      const [p, c] = await Promise.all([getAllProductsAdmin(), getCategories()]);
+      setProducts(Array.isArray(p) ? p : []);
+      setCategories(Array.isArray(c) ? c : []);
     } catch (e) {
       console.error('Failed to load products/categories in admin:', e);
     }
@@ -27,38 +26,33 @@ export default function AdminProducts() {
 
   useEffect(() => {
     loadData();
-    const handleStoreChange = () => loadData();
-    window.addEventListener('walid_shop_store_change', handleStoreChange);
-    return () => window.removeEventListener('walid_shop_store_change', handleStoreChange);
   }, []);
 
-  const handleSaveProduct = (formData) => {
+  const handleSaveProduct = async (formData) => {
     try {
       if (editingProduct) {
-        updateProduct(editingProduct.id, formData);
+        await updateProduct(editingProduct.id, formData);
         addToast('Produit mis à jour avec succès!', 'success');
       } else {
-        addProduct(formData);
+        await addProduct(formData);
         addToast('Produit ajouté avec succès!', 'success');
       }
       setModalOpen(false);
       setEditingProduct(null);
-      loadData();
+      await loadData();
     } catch (err) {
       console.error('Error saving product:', err);
       addToast('Erreur lors de l\'enregistrement', 'error');
     }
   };
 
-  const handleDeleteProduct = (id, name) => {
+  const handleDeleteProduct = async (id, name) => {
     if (window.confirm(`Êtes-vous sûr de vouloir supprimer définitivement "${name}" ?\nهل أنت متأكد من حذف هذا المنتج نهائياً؟`)) {
       try {
-        deleteProduct(id);
-        // Immediately filter from state for instant responsiveness
+        await deleteProduct(id);
         setProducts(prev => prev.filter(p => Number(p.id) !== Number(id)));
         addToast(`Produit "${name}" supprimé définitivement!`, 'success');
-        // Also reload from db to be 100% sure
-        setTimeout(loadData, 50);
+        await loadData();
       } catch (err) {
         console.error('Error deleting product:', err);
         addToast('Erreur lors de la suppression', 'error');
@@ -88,11 +82,15 @@ export default function AdminProducts() {
             <button
               className="btn btn-outline btn-sm"
               style={{ color: '#dc2626', borderColor: '#fca5a5' }}
-              onClick={() => {
+              onClick={async () => {
                 if (window.confirm('Supprimer TOUS les produits ?\nهل أنت متأكد من حذف كافة المنتجات؟')) {
-                  clearAllProducts();
-                  setProducts([]);
-                  addToast('Tous les produits ont été supprimés!', 'success');
+                  try {
+                    await clearAllProducts();
+                    setProducts([]);
+                    addToast('Tous les produits ont été supprimés!', 'success');
+                  } catch (err) {
+                    console.error('Failed to clear products:', err);
+                  }
                 }
               }}
               title="Supprimer tous les produits du magasin"

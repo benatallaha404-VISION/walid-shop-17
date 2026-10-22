@@ -1,7 +1,7 @@
 // src/pages/admin/ProductModal.jsx
 import React, { useState, useRef } from 'react';
 import { X, Plus, Trash2, Image, Link as LinkIcon, DollarSign, Check } from 'lucide-react';
-import { compressImage } from '../../db.js';
+import { compressImage } from '../../api.js';
 
 const POPULAR_SIZES = ['XS', 'S', 'M', 'L', 'XL', 'XXL', '3XL', '36', '38', '40', '42', '44', 'Unique'];
 const PRESET_COLORS = [

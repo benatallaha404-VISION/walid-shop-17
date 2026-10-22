@@ -3,40 +3,38 @@ import React, { useEffect, useState } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { ShoppingBag, ArrowLeft, Package } from 'lucide-react';
 import { useApp } from '../context/AppContext.jsx';
-import { getProductById } from '../db.js';
+import { getProductById } from '../api.js';
 
 export default function ProductDetailPage() {
   const { id } = useParams();
-  const { dbReady, addToCart } = useApp();
+  const { addToCart } = useApp();
   const navigate = useNavigate();
 
-  const [product, setProduct] = useState(() => getProductById(parseInt(id)));
-  const [selectedSize, setSelectedSize] = useState(() => product?.sizes?.[0] || '');
-  const [selectedColor, setSelectedColor] = useState(() => product?.colors?.[0] || '');
+  const [product, setProduct] = useState(null);
+  const [selectedSize, setSelectedSize] = useState('');
+  const [selectedColor, setSelectedColor] = useState('');
   const [selectedImg, setSelectedImg] = useState(0);
   const [customColorImg, setCustomColorImg] = useState(null);
   const [qty, setQty] = useState(1);
-  const [loading, setLoading] = useState(() => !product);
+  const [loading, setLoading] = useState(true);
 
-  const loadProduct = () => {
+  const loadProduct = async () => {
+    setLoading(true);
     try {
-      const p = getProductById(parseInt(id));
+      const p = await getProductById(id);
       if (p) {
         setProduct(p);
-        setSelectedSize(prev => prev || p.sizes?.[0] || '');
+        setSelectedSize(p.sizes?.[0] || '');
         const initialColor = p.colors?.[0] || '';
-        setSelectedColor(prev => prev || initialColor);
+        setSelectedColor(initialColor);
         if (p.color_images && p.color_images[initialColor]) {
           const idx = p.images?.indexOf(p.color_images[initialColor]);
-          if (idx !== -1 && idx !== undefined) {
-            setSelectedImg(idx);
-          } else {
-            setCustomColorImg(p.color_images[initialColor]);
-          }
+          if (idx !== -1 && idx !== undefined) setSelectedImg(idx);
+          else setCustomColorImg(p.color_images[initialColor]);
         }
       }
     } catch (e) {
-      console.error('Error fetching product by id:', e);
+      console.error('Error fetching product:', e);
     } finally {
       setLoading(false);
     }
@@ -44,10 +42,7 @@ export default function ProductDetailPage() {
 
   useEffect(() => {
     loadProduct();
-    const handleStoreChange = () => loadProduct();
-    window.addEventListener('walid_shop_store_change', handleStoreChange);
-    return () => window.removeEventListener('walid_shop_store_change', handleStoreChange);
-  }, [dbReady, id]);
+  }, [id]);
 
   const handleColorClick = (color, index) => {
     setSelectedColor(color);
