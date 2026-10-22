@@ -27,6 +27,9 @@ export default function AdminProducts() {
 
   useEffect(() => {
     loadData();
+    const handleStoreChange = () => loadData();
+    window.addEventListener('walid_shop_store_change', handleStoreChange);
+    return () => window.removeEventListener('walid_shop_store_change', handleStoreChange);
   }, []);
 
   const handleSaveProduct = (formData) => {

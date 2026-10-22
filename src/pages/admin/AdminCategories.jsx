@@ -21,6 +21,9 @@ export default function AdminCategories() {
 
   useEffect(() => {
     loadCategories();
+    const handleStoreChange = () => loadCategories();
+    window.addEventListener('walid_shop_store_change', handleStoreChange);
+    return () => window.removeEventListener('walid_shop_store_change', handleStoreChange);
   }, []);
 
   const handleAdd = (e) => {

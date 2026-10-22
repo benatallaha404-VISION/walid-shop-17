@@ -1,6 +1,7 @@
 // src/pages/admin/ProductModal.jsx
 import React, { useState, useRef } from 'react';
 import { X, Plus, Trash2, Image, Link as LinkIcon, DollarSign, Check } from 'lucide-react';
+import { compressImage } from '../../db.js';
 
 const POPULAR_SIZES = ['XS', 'S', 'M', 'L', 'XL', 'XXL', '3XL', '36', '38', '40', '42', '44', 'Unique'];
 const PRESET_COLORS = [
@@ -96,21 +97,23 @@ export default function ProductModal({ product, categories, onSave, onClose }) {
     });
   };
 
-  // Upload images from device
-  const handleFileUpload = (e) => {
+  // Upload and auto-compress images from device
+  const handleFileUpload = async (e) => {
     const files = Array.from(e.target.files || []);
-    files.forEach(file => {
-      if (!file.type.startsWith('image/')) return;
-      const reader = new FileReader();
-      reader.onload = (ev) => {
-        const dataUrl = ev.target.result;
-        setForm(prev => {
-          if (prev.images.includes(dataUrl)) return prev;
-          return { ...prev, images: [...prev.images, dataUrl] };
-        });
-      };
-      reader.readAsDataURL(file);
-    });
+    for (const file of files) {
+      if (!file.type.startsWith('image/')) continue;
+      try {
+        const compressedUrl = await compressImage(file, 1200, 1200, 0.82);
+        if (compressedUrl) {
+          setForm(prev => {
+            if (prev.images.includes(compressedUrl)) return prev;
+            return { ...prev, images: [...prev.images, compressedUrl] };
+          });
+        }
+      } catch (err) {
+        console.error('Image compression error:', err);
+      }
+    }
     // Reset input so same file can be re-selected
     if (fileInputRef.current) fileInputRef.current.value = '';
   };

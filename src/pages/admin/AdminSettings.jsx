@@ -1,7 +1,7 @@
 // src/pages/admin/AdminSettings.jsx
 import React, { useState, useEffect, useRef } from 'react';
 import { Save, Image, Download, Upload, MapPin, Trash2 } from 'lucide-react';
-import { getAllSettings, setSetting, exportDB, importDB, clearAllProducts } from '../../db.js';
+import { getAllSettings, setSetting, exportDB, importDB, clearAllProducts, compressImage } from '../../db.js';
 import { useApp } from '../../context/AppContext.jsx';
 import GoogleMapEmbed from '../../components/GoogleMapEmbed.jsx';
 
@@ -33,14 +33,17 @@ export default function AdminSettings() {
     }
   };
 
-  const handleHeroImage = (e) => {
+  const handleHeroImage = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      handleSettingChange('hero_image', ev.target.result);
-    };
-    reader.readAsDataURL(file);
+    try {
+      const compressed = await compressImage(file, 1920, 1080, 0.85);
+      if (compressed) {
+        handleSettingChange('hero_image', compressed);
+      }
+    } catch (err) {
+      console.error('Hero image compression error:', err);
+    }
   };
 
   const handleImport = async (e) => {

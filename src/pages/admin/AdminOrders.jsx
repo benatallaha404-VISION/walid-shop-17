@@ -21,6 +21,9 @@ export default function AdminOrders() {
 
   useEffect(() => {
     loadOrders();
+    const handleStoreChange = () => loadOrders();
+    window.addEventListener('walid_shop_store_change', handleStoreChange);
+    return () => window.removeEventListener('walid_shop_store_change', handleStoreChange);
   }, []);
 
   const handleStatusChange = (id, newStatus) => {

@@ -1,13 +1,11 @@
-// src/db.js - Resilient Database with SQLite (sql.js) & LocalStorage Fallback
+// src/db.js - High-Performance, Ultra-Reliable IndexedDB & LocalStorage Database
+// Zero flicker, instant synchronous reads, persistent storage with image support
 
-let SQL = null;
-let db = null;
-let isFallbackMode = false;
+const IDB_NAME = 'walid_shop_db_v2';
+const IDB_STORE = 'app_data';
+const LOCAL_STORE_KEY = 'walid_shop_store_v2';
 
-const DB_KEY = 'walid_shop_db';
-const FALLBACK_KEY = 'walid_shop_fallback_store';
-
-const defaultSettings = {
+export const defaultSettings = {
   store_name: 'Walid Shop',
   store_email: '',
   store_phone: '',
@@ -25,7 +23,7 @@ const defaultSettings = {
   emailjs_public_key: '',
 };
 
-const defaultCategories = [
+export const defaultCategories = [
   { id: 1, name: 'T-Shirts', slug: 't-shirts', active: 1 },
   { id: 2, name: 'Pantalons', slug: 'pantalons', active: 1 },
   { id: 3, name: 'Vestes', slug: 'vestes', active: 1 },
@@ -34,684 +32,430 @@ const defaultCategories = [
   { id: 6, name: 'Hoodies', slug: 'hoodies', active: 1 },
 ];
 
-const defaultWilayasList = [
+export const defaultWilayasList = [
   'Adrar','Chlef','Laghouat','Oum El Bouaghi','Batna','Béjaïa','Biskra','Béchar',
   'Blida','Bouira','Tamanrasset','Tébessa','Tlemcen','Tiaret','Tizi Ouzou','Alger',
   'Djelfa','Jijel','Sétif','Saïda','Skikda','Sidi Bel Abbès','Annaba','Guelma',
   'Constantine','Médéa','Mostaganem','M\'Sila','Mascara','Ouargla','Oran','El Bayadh',
   'Illizi','Bordj Bou Arréridj','Boumerdès','El Tarf','Tindouf','Tissemsilt','El Oued',
   'Khenchela','Souk Ahras','Tipaza','Mila','Aïn Defla','Naâma','Aïn Témouchent',
-  'Ghardaïa','Relizane','Timimoun','Bordj Badji Mokhtar'
+  'Ghardaïa','Relizane','Timimoun','Bordj Badji Mokhtar','Ouled Djellal','Béni Abbès',
+  'In Salah','In Guezzam','Touggourt','Djanet','El M\'Ghair','El Meniaa'
 ];
-// No default products — store starts empty
 
-// Fallback Store in LocalStorage
-let fallbackStore = {
-  settings: { ...defaultSettings },
-  categories: [...defaultCategories],
-  products: [],
-  orders: [],
-  wilayas: defaultWilayasList.map((name, i) => ({
+function buildDefaultWilayas() {
+  return defaultWilayasList.map((name, i) => ({
     id: i + 1,
     name,
-    delivery_price: name === 'Alger' ? 400 : name === 'Oran' || name === 'Constantine' ? 500 : 700,
+    delivery_price: name === 'Alger' ? 400 : (name === 'Oran' || name === 'Constantine' || name === 'Blida') ? 500 : 700,
     active: 1
-  }))
+  }));
+}
+
+// In-Memory synchronous cache
+let store = {
+  settings: { ...defaultSettings },
+  categories: [...defaultCategories],
+  wilayas: buildDefaultWilayas(),
+  products: [],
+  orders: []
 };
 
-const STORE_VERSION = 'v3-clean'; // bump this to wipe old cached dummy data
-
-function loadFallbackStore() {
-  try {
-    const raw = localStorage.getItem(FALLBACK_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (parsed && typeof parsed === 'object') {
-        // If old version (has dummy products seeded before), wipe products
-        const isOldVersion = parsed._version !== STORE_VERSION;
-        fallbackStore = {
-          ...fallbackStore,
-          ...parsed,
-          _version: STORE_VERSION,
-          products: isOldVersion ? [] : (Array.isArray(parsed.products) ? parsed.products : []),
-          settings: { ...defaultSettings, ...(parsed.settings || {}) },
-          categories: Array.isArray(parsed.categories) ? parsed.categories : [...defaultCategories],
-          wilayas: Array.isArray(parsed.wilayas) && parsed.wilayas.length > 0 ? parsed.wilayas : fallbackStore.wilayas,
-          orders: Array.isArray(parsed.orders) ? parsed.orders : [],
-        };
-        if (isOldVersion) {
-          // Save immediately to lock in new version and clear old dummy data
-          saveFallbackStore();
-        }
-        return;
-      }
+// Synchronously load from LocalStorage on module import for 0ms immediate data availability
+try {
+  const localRaw = localStorage.getItem(LOCAL_STORE_KEY) || localStorage.getItem('walid_shop_fallback_store');
+  if (localRaw) {
+    const parsed = JSON.parse(localRaw);
+    if (parsed && typeof parsed === 'object') {
+      store = {
+        settings: { ...defaultSettings, ...(parsed.settings || {}) },
+        categories: Array.isArray(parsed.categories) && parsed.categories.length ? parsed.categories : [...defaultCategories],
+        wilayas: Array.isArray(parsed.wilayas) && parsed.wilayas.length ? parsed.wilayas : buildDefaultWilayas(),
+        products: Array.isArray(parsed.products) ? parsed.products : [],
+        orders: Array.isArray(parsed.orders) ? parsed.orders : [],
+      };
     }
-  } catch (e) {
-    console.warn('Fallback store parsing error, resetting to defaults', e);
   }
-  fallbackStore._version = STORE_VERSION;
-  saveFallbackStore();
+} catch (e) {
+  console.warn('Initial store load warning:', e);
 }
 
-function saveFallbackStore() {
-  try {
-    localStorage.setItem(FALLBACK_KEY, JSON.stringify(fallbackStore));
-  } catch (e) {
-    console.warn('Failed to save fallback store to localStorage', e);
-  }
+// IndexedDB Helper (Promise-based, works everywhere, unlimited storage)
+function openIDB() {
+  return new Promise((resolve, reject) => {
+    if (typeof indexedDB === 'undefined') {
+      return reject(new Error('IndexedDB not available'));
+    }
+    const request = indexedDB.open(IDB_NAME, 1);
+    request.onupgradeneeded = (e) => {
+      const db = e.target.result;
+      if (!db.objectStoreNames.contains(IDB_STORE)) {
+        db.createObjectStore(IDB_STORE);
+      }
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
 }
 
-export async function initDB() {
-  if (db || isFallbackMode) return db || fallbackStore;
-
+async function loadFromIndexedDB() {
   try {
-    // 1. Dynamically import sql.js
-    const sqlJs = await import('sql.js');
-    const initSqlJs = sqlJs.default || sqlJs;
-
-    // 2. Initialize using local sql-wasm.wasm
-    SQL = await initSqlJs({
-      locateFile: (file) => file.endsWith('.wasm') ? '/sql-wasm.wasm' : `https://sql.js.org/dist/${file}`
+    const idb = await openIDB();
+    return new Promise((resolve) => {
+      const tx = idb.transaction(IDB_STORE, 'readonly');
+      const os = tx.objectStore(IDB_STORE);
+      const req = os.get('main_state');
+      req.onsuccess = () => resolve(req.result || null);
+      req.onerror = () => resolve(null);
     });
-
-    // 3. Try to load existing DB from localStorage
-    const saved = localStorage.getItem(DB_KEY);
-    let loadedOk = false;
-
-    if (saved) {
-      try {
-        const arr = JSON.parse(saved);
-        const uint8 = new Uint8Array(arr);
-        db = new SQL.Database(uint8);
-
-        // Verify database has products table (even if 0 products exist!)
-        const check = db.exec("SELECT count(*) FROM sqlite_master WHERE type='table' AND name='products'");
-        const count = check[0]?.values[0]?.[0];
-        if (typeof count === 'number' && count > 0) {
-          loadedOk = true;
-        }
-      } catch (err) {
-        console.warn('Corrupted SQLite DB in localStorage, resetting...', err);
-      }
-    }
-
-    if (!loadedOk) {
-      db = new SQL.Database();
-      createSchema();
-      seedData();
-      saveDB();
-    } else {
-      runMigrations();
-    }
-
-    return db;
   } catch (err) {
-    console.warn('sql.js WebAssembly failed or unavailable, using resilient LocalStorage store:', err);
-    isFallbackMode = true;
-    loadFallbackStore();
-    return fallbackStore;
+    console.warn('IndexedDB load warning:', err);
+    return null;
   }
 }
 
-function runMigrations() {
-  if (!db) return;
+async function saveToIndexedDB(state) {
   try {
-    db.run("ALTER TABLE products ADD COLUMN cost_price REAL DEFAULT 0");
-  } catch (_) {}
-  try {
-    db.run("ALTER TABLE products ADD COLUMN color_images TEXT DEFAULT '{}'");
-  } catch (_) {}
-  try {
-    db.run("ALTER TABLE orders ADD COLUMN delivery_type TEXT DEFAULT 'home'");
-  } catch (_) {}
-}
-
-export function saveDB() {
-  if (isFallbackMode) {
-    saveFallbackStore();
-    return;
-  }
-  if (!db) return;
-  try {
-    const data = db.export();
-    const arr = Array.from(data);
-    localStorage.setItem(DB_KEY, JSON.stringify(arr));
-  } catch (e) {
-    console.error('Error saving SQLite DB to localStorage:', e);
+    const idb = await openIDB();
+    return new Promise((resolve, reject) => {
+      const tx = idb.transaction(IDB_STORE, 'readwrite');
+      const os = tx.objectStore(IDB_STORE);
+      const req = os.put(state, 'main_state');
+      req.onsuccess = () => resolve(true);
+      req.onerror = () => reject(req.error);
+    });
+  } catch (err) {
+    console.warn('IndexedDB save warning:', err);
   }
 }
 
-function createSchema() {
-  db.run(`
-    CREATE TABLE IF NOT EXISTS settings (
-      key TEXT PRIMARY KEY,
-      value TEXT
-    );
+// Persist function: updates IndexedDB (unlimited) and mirrors to LocalStorage safely
+function persist() {
+  // 1. Asynchronously persist to IndexedDB (safe for huge images)
+  saveToIndexedDB(store);
 
-    CREATE TABLE IF NOT EXISTS categories (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      name TEXT NOT NULL,
-      slug TEXT NOT NULL UNIQUE,
-      active INTEGER DEFAULT 1
-    );
+  // 2. Mirror to LocalStorage for instant 0ms first-render on reload
+  try {
+    localStorage.setItem(LOCAL_STORE_KEY, JSON.stringify(store));
+  } catch (err) {
+    // If quota exceeded due to large images, store without images in localStorage
+    // while IndexedDB keeps full images perfectly safe!
+    try {
+      const lightStore = {
+        ...store,
+        products: store.products.map(p => ({
+          ...p,
+          images: (p.images || []).map(img => img.length > 200000 ? '' : img)
+        }))
+      };
+      localStorage.setItem(LOCAL_STORE_KEY, JSON.stringify(lightStore));
+    } catch (_) {
+      console.warn('LocalStorage quota limit reached; IndexedDB is active.');
+    }
+  }
 
-    CREATE TABLE IF NOT EXISTS products (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      name TEXT NOT NULL,
-      description TEXT,
-      category_id INTEGER,
-      price REAL NOT NULL,
-      old_price REAL,
-      cost_price REAL DEFAULT 0,
-      images TEXT DEFAULT '[]',
-      color_images TEXT DEFAULT '{}',
-      sizes TEXT DEFAULT '[]',
-      colors TEXT DEFAULT '[]',
-      stock INTEGER DEFAULT 0,
-      badge TEXT,
-      active INTEGER DEFAULT 1,
-      created_at TEXT DEFAULT (datetime('now')),
-      FOREIGN KEY(category_id) REFERENCES categories(id)
-    );
-
-    CREATE TABLE IF NOT EXISTS orders (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      order_number TEXT UNIQUE,
-      customer_name TEXT NOT NULL,
-      customer_phone TEXT NOT NULL,
-      customer_email TEXT,
-      delivery_type TEXT DEFAULT 'home',
-      wilaya TEXT NOT NULL,
-      commune TEXT,
-      address TEXT,
-      note TEXT,
-      items TEXT NOT NULL,
-      subtotal REAL NOT NULL,
-      delivery_price REAL NOT NULL,
-      total REAL NOT NULL,
-      status TEXT DEFAULT 'pending',
-      created_at TEXT DEFAULT (datetime('now'))
-    );
-
-    CREATE TABLE IF NOT EXISTS wilayas (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      name TEXT NOT NULL,
-      delivery_price REAL NOT NULL DEFAULT 500,
-      active INTEGER DEFAULT 1
-    );
-  `);
+  // Notify active listeners
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('walid_shop_store_change', { detail: store }));
+  }
 }
 
-function seedData() {
-  Object.entries(defaultSettings).forEach(([key, value]) => {
-    db.run('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)', [key, value]);
-  });
+// Initialize database
+let dbInitialized = false;
+export async function initDB() {
+  if (dbInitialized) return store;
 
-  defaultCategories.forEach(cat => {
-    db.run('INSERT OR IGNORE INTO categories (id, name, slug, active) VALUES (?, ?, ?, ?)', [cat.id, cat.name, cat.slug, cat.active]);
-  });
+  try {
+    const idbData = await loadFromIndexedDB();
+    if (idbData && typeof idbData === 'object') {
+      store = {
+        settings: { ...defaultSettings, ...(idbData.settings || {}) },
+        categories: Array.isArray(idbData.categories) && idbData.categories.length ? idbData.categories : [...defaultCategories],
+        wilayas: Array.isArray(idbData.wilayas) && idbData.wilayas.length ? idbData.wilayas : buildDefaultWilayas(),
+        products: Array.isArray(idbData.products) ? idbData.products : [],
+        orders: Array.isArray(idbData.orders) ? idbData.orders : [],
+      };
+    } else {
+      // First run in IndexedDB: seed with current in-memory store
+      await saveToIndexedDB(store);
+    }
+  } catch (err) {
+    console.warn('initDB fallback:', err);
+  }
 
-  defaultWilayasList.forEach((name, i) => {
-    db.run('INSERT OR IGNORE INTO wilayas (id, name, delivery_price, active) VALUES (?, ?, ?, ?)',
-      [i + 1, name, name === 'Alger' ? 400 : name === 'Oran' || name === 'Constantine' ? 500 : 700, 1]);
-  });
+  dbInitialized = true;
+  return store;
 }
 
-// Helpers
-function rowsToObjects(result) {
-  if (!result || result.length === 0) return [];
-  const { columns, values } = result[0];
-  return values.map(row => {
-    const obj = {};
-    columns.forEach((col, i) => { obj[col] = row[i]; });
-    return obj;
+// Image compression utility: turns large camera photos into ~60KB crisp WebP/JPEG
+export function compressImage(file, maxWidth = 1200, maxHeight = 1200, quality = 0.82) {
+  return new Promise((resolve) => {
+    if (!file || !file.type?.startsWith('image/')) {
+      resolve('');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        let width = img.width;
+        let height = img.height;
+        if (width > maxWidth || height > maxHeight) {
+          if (width > height) {
+            height = Math.round((height * maxWidth) / width);
+            width = maxWidth;
+          } else {
+            width = Math.round((width * maxHeight) / height);
+            height = maxHeight;
+          }
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, width, height);
+        // Try WebP first for ultra small size, fallback to JPEG
+        try {
+          const webp = canvas.toDataURL('image/webp', quality);
+          if (webp.startsWith('data:image/webp')) {
+            return resolve(webp);
+          }
+        } catch (_) {}
+        resolve(canvas.toDataURL('image/jpeg', quality));
+      };
+      img.onerror = () => resolve(e.target.result);
+      img.src = e.target.result;
+    };
+    reader.onerror = () => resolve('');
+    reader.readAsDataURL(file);
   });
-}
-
-function firstRow(result) {
-  const rows = rowsToObjects(result);
-  return rows[0] || null;
-}
-
-function tryParseJSON(str, fallback) {
-  if (!str) return fallback;
-  if (typeof str !== 'string') return str;
-  try { return JSON.parse(str); } catch { return fallback; }
 }
 
 function parseProduct(p) {
+  const cats = store.categories || [];
+  const cat = cats.find(c => Number(c.id) === Number(p.category_id));
   return {
     ...p,
+    id: Number(p.id),
+    category_id: p.category_id ? Number(p.category_id) : null,
+    category_name: cat ? cat.name : 'Mode',
+    category_slug: cat ? cat.slug : '',
+    price: Number(p.price) || 0,
+    old_price: p.old_price ? Number(p.old_price) : null,
     cost_price: Number(p.cost_price) || 0,
-    images: tryParseJSON(p.images, []),
-    color_images: tryParseJSON(p.color_images, {}),
-    sizes: tryParseJSON(p.sizes, []),
-    colors: tryParseJSON(p.colors, []),
+    stock: p.stock !== undefined ? Number(p.stock) : 20,
+    images: Array.isArray(p.images) ? p.images : [],
+    color_images: (p.color_images && typeof p.color_images === 'object') ? p.color_images : {},
+    sizes: Array.isArray(p.sizes) ? p.sizes : [],
+    colors: Array.isArray(p.colors) ? p.colors : [],
+    active: p.active !== 0 ? 1 : 0
   };
-}
-
-// ============ SETTINGS ============
-export function getSetting(key) {
-  if (isFallbackMode || !db) {
-    loadFallbackStore();
-    return fallbackStore.settings[key] ?? null;
-  }
-  try {
-    const res = db.exec('SELECT value FROM settings WHERE key = ?', [key]);
-    const row = firstRow(res);
-    return row ? row.value : null;
-  } catch {
-    return fallbackStore.settings[key] ?? null;
-  }
-}
-
-export function setSetting(key, value) {
-  if (isFallbackMode || !db) {
-    fallbackStore.settings[key] = String(value);
-    saveFallbackStore();
-    return;
-  }
-  try {
-    db.run('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)', [key, String(value)]);
-    saveDB();
-  } catch {
-    fallbackStore.settings[key] = String(value);
-    saveFallbackStore();
-  }
-}
-
-export function getAllSettings() {
-  if (isFallbackMode || !db) {
-    loadFallbackStore();
-    return { ...fallbackStore.settings };
-  }
-  try {
-    const res = db.exec('SELECT key, value FROM settings');
-    const rows = rowsToObjects(res);
-    const obj = {};
-    rows.forEach(r => { obj[r.key] = r.value; });
-    return obj;
-  } catch {
-    return { ...fallbackStore.settings };
-  }
-}
-
-// ============ CATEGORIES ============
-export function getCategories(activeOnly = false) {
-  if (isFallbackMode || !db) {
-    loadFallbackStore();
-    return activeOnly ? fallbackStore.categories.filter(c => c.active === 1) : [...fallbackStore.categories];
-  }
-  try {
-    const sql = activeOnly
-      ? 'SELECT * FROM categories WHERE active = 1 ORDER BY id'
-      : 'SELECT * FROM categories ORDER BY id';
-    return rowsToObjects(db.exec(sql));
-  } catch {
-    return activeOnly ? fallbackStore.categories.filter(c => c.active === 1) : [...fallbackStore.categories];
-  }
-}
-
-export function addCategory(name, slug) {
-  if (isFallbackMode || !db) {
-    const id = Date.now();
-    fallbackStore.categories.push({ id, name, slug, active: 1 });
-    saveFallbackStore();
-    return;
-  }
-  try {
-    db.run('INSERT INTO categories (name, slug) VALUES (?, ?)', [name, slug]);
-    saveDB();
-  } catch {
-    fallbackStore.categories.push({ id: Date.now(), name, slug, active: 1 });
-    saveFallbackStore();
-  }
-}
-
-export function updateCategory(id, name, slug, active) {
-  if (isFallbackMode || !db) {
-    const cat = fallbackStore.categories.find(c => c.id === id);
-    if (cat) {
-      cat.name = name;
-      cat.slug = slug;
-      cat.active = active ? 1 : 0;
-      saveFallbackStore();
-    }
-    return;
-  }
-  try {
-    db.run('UPDATE categories SET name=?, slug=?, active=? WHERE id=?', [name, slug, active ? 1 : 0, id]);
-    saveDB();
-  } catch {
-    const cat = fallbackStore.categories.find(c => c.id === id);
-    if (cat) {
-      cat.name = name;
-      cat.slug = slug;
-      cat.active = active ? 1 : 0;
-      saveFallbackStore();
-    }
-  }
-}
-
-export function deleteCategory(id) {
-  if (isFallbackMode || !db) {
-    fallbackStore.categories = fallbackStore.categories.filter(c => c.id !== id);
-    saveFallbackStore();
-    return;
-  }
-  try {
-    db.run('DELETE FROM categories WHERE id=?', [id]);
-    saveDB();
-  } catch {
-    fallbackStore.categories = fallbackStore.categories.filter(c => c.id !== id);
-    saveFallbackStore();
-  }
 }
 
 // ============ PRODUCTS ============
 export function getProducts({ categoryId, search, sort } = {}) {
-  if (isFallbackMode || !db) {
-    loadFallbackStore();
-    let list = fallbackStore.products.filter(p => p.active === 1);
-    if (categoryId) list = list.filter(p => Number(p.category_id) === Number(categoryId));
-    if (search) {
-      const q = search.toLowerCase();
-      list = list.filter(p => p.name?.toLowerCase().includes(q) || p.description?.toLowerCase().includes(q));
-    }
-    if (sort === 'price_asc') list.sort((a, b) => a.price - b.price);
-    else if (sort === 'price_desc') list.sort((a, b) => b.price - a.price);
-    else if (sort === 'newest') list.sort((a, b) => (b.id || 0) - (a.id || 0));
+  let list = (store.products || []).filter(p => p.active !== 0);
 
-    const cats = fallbackStore.categories;
-    return list.map(p => {
-      const cat = cats.find(c => c.id === p.category_id);
-      return parseProduct({ ...p, category_name: cat?.name || 'Mode', category_slug: cat?.slug || '' });
-    });
+  if (categoryId) {
+    list = list.filter(p => Number(p.category_id) === Number(categoryId));
   }
 
-  try {
-    let sql = `
-      SELECT p.*, c.name as category_name, c.slug as category_slug
-      FROM products p
-      LEFT JOIN categories c ON p.category_id = c.id
-      WHERE p.active = 1
-    `;
-    const params = [];
-
-    if (categoryId) {
-      sql += ' AND p.category_id = ?';
-      params.push(categoryId);
-    }
-    if (search) {
-      sql += ' AND (p.name LIKE ? OR p.description LIKE ?)';
-      params.push(`%${search}%`, `%${search}%`);
-    }
-
-    if (sort === 'price_asc') sql += ' ORDER BY p.price ASC';
-    else if (sort === 'price_desc') sql += ' ORDER BY p.price DESC';
-    else if (sort === 'newest') sql += ' ORDER BY p.created_at DESC';
-    else sql += ' ORDER BY p.id DESC';
-
-    const res = db.exec(sql, params);
-    return rowsToObjects(res).map(parseProduct);
-  } catch (e) {
-    console.error('getProducts SQLite error, using fallback:', e);
-    isFallbackMode = true;
-    return getProducts({ categoryId, search, sort });
+  if (search) {
+    const q = search.toLowerCase().trim();
+    list = list.filter(p =>
+      p.name?.toLowerCase().includes(q) ||
+      p.description?.toLowerCase().includes(q)
+    );
   }
+
+  if (sort === 'price_asc') {
+    list.sort((a, b) => (Number(a.price) || 0) - (Number(b.price) || 0));
+  } else if (sort === 'price_desc') {
+    list.sort((a, b) => (Number(b.price) || 0) - (Number(a.price) || 0));
+  } else {
+    // newest
+    list.sort((a, b) => (Number(b.id) || 0) - (Number(a.id) || 0));
+  }
+
+  return list.map(parseProduct);
 }
 
 export function getAllProductsAdmin() {
-  if (isFallbackMode || !db) {
-    loadFallbackStore();
-    const cats = fallbackStore.categories;
-    return [...fallbackStore.products].reverse().map(p => {
-      const cat = cats.find(c => c.id === p.category_id);
-      return parseProduct({ ...p, category_name: cat?.name || 'Mode' });
-    });
-  }
-
-  try {
-    const sql = `
-      SELECT p.*, c.name as category_name
-      FROM products p
-      LEFT JOIN categories c ON p.category_id = c.id
-      ORDER BY p.id DESC
-    `;
-    return rowsToObjects(db.exec(sql)).map(parseProduct);
-  } catch (e) {
-    console.error('getAllProductsAdmin SQLite error, using fallback:', e);
-    isFallbackMode = true;
-    return getAllProductsAdmin();
-  }
+  const list = [...(store.products || [])];
+  list.sort((a, b) => (Number(b.id) || 0) - (Number(a.id) || 0));
+  return list.map(parseProduct);
 }
 
 export function getProductById(id) {
   const numId = Number(id);
-  if (isFallbackMode || !db) {
-    loadFallbackStore();
-    const p = fallbackStore.products.find(item => Number(item.id) === numId);
-    if (!p) return null;
-    const cat = fallbackStore.categories.find(c => c.id === p.category_id);
-    return parseProduct({ ...p, category_name: cat?.name || 'Mode', category_slug: cat?.slug || '' });
-  }
-
-  try {
-    const res = db.exec(`
-      SELECT p.*, c.name as category_name, c.slug as category_slug
-      FROM products p
-      LEFT JOIN categories c ON p.category_id = c.id
-      WHERE p.id = ?
-    `, [numId]);
-    const row = firstRow(res);
-    return row ? parseProduct(row) : null;
-  } catch (e) {
-    console.error('getProductById SQLite error, using fallback:', e);
-    isFallbackMode = true;
-    return getProductById(id);
-  }
+  const p = (store.products || []).find(item => Number(item.id) === numId);
+  return p ? parseProduct(p) : null;
 }
 
 export function addProduct(data) {
-  const costPrice = Number(data.cost_price) || 0;
-  const colorImages = typeof data.color_images === 'object' && data.color_images !== null ? data.color_images : tryParseJSON(data.color_images, {});
-  if (isFallbackMode || !db) {
-    loadFallbackStore();
-    const newProduct = {
-      ...data,
-      id: Date.now(),
-      created_at: new Date().toISOString(),
-      active: data.active !== false ? 1 : 0,
-      cost_price: costPrice,
-      images: Array.isArray(data.images) ? data.images : tryParseJSON(data.images, []),
-      color_images: colorImages,
-      sizes: Array.isArray(data.sizes) ? data.sizes : tryParseJSON(data.sizes, []),
-      colors: Array.isArray(data.colors) ? data.colors : tryParseJSON(data.colors, []),
-      stock: Number(data.stock) || 0,
-    };
-    fallbackStore.products.unshift(newProduct);
-    saveFallbackStore();
-    return newProduct.id;
-  }
+  const newId = Date.now();
+  const product = {
+    ...data,
+    id: newId,
+    name: String(data.name || '').trim(),
+    description: String(data.description || '').trim(),
+    category_id: data.category_id ? Number(data.category_id) : null,
+    price: Number(data.price) || 0,
+    old_price: data.old_price ? Number(data.old_price) : null,
+    cost_price: Number(data.cost_price) || 0,
+    stock: data.stock !== undefined ? Number(data.stock) : 20,
+    badge: data.badge || null,
+    active: data.active !== false && data.active !== 0 ? 1 : 0,
+    images: Array.isArray(data.images) ? data.images : [],
+    color_images: (data.color_images && typeof data.color_images === 'object') ? data.color_images : {},
+    sizes: Array.isArray(data.sizes) ? data.sizes : [],
+    colors: Array.isArray(data.colors) ? data.colors : [],
+    created_at: new Date().toISOString()
+  };
 
-  try {
-    db.run(
-      `INSERT INTO products (name, description, category_id, price, old_price, cost_price, images, color_images, sizes, colors, stock, badge, active)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        data.name,
-        data.description,
-        data.category_id,
-        data.price,
-        data.old_price || null,
-        costPrice,
-        JSON.stringify(data.images || []),
-        JSON.stringify(colorImages || {}),
-        JSON.stringify(data.sizes || []),
-        JSON.stringify(data.colors || []),
-        data.stock || 0,
-        data.badge || null,
-        data.active !== false ? 1 : 0,
-      ]
-    );
-    saveDB();
-  } catch (e) {
-    console.error('addProduct SQLite error, switching to fallback:', e);
-    isFallbackMode = true;
-    return addProduct(data);
-  }
+  store.products = [product, ...(store.products || [])];
+  persist();
+  return newId;
 }
 
 export function updateProduct(id, data) {
   const numId = Number(id);
-  const costPrice = Number(data.cost_price) || 0;
-  const colorImages = typeof data.color_images === 'object' && data.color_images !== null ? data.color_images : tryParseJSON(data.color_images, {});
-  if (isFallbackMode || !db) {
-    loadFallbackStore();
-    const p = fallbackStore.products.find(item => Number(item.id) === numId);
-    if (p) {
-      Object.assign(p, {
-        name: data.name,
-        description: data.description,
-        category_id: data.category_id,
-        price: data.price,
-        old_price: data.old_price || null,
-        cost_price: costPrice,
-        images: Array.isArray(data.images) ? data.images : tryParseJSON(data.images, []),
-        color_images: colorImages,
-        sizes: Array.isArray(data.sizes) ? data.sizes : tryParseJSON(data.sizes, []),
-        colors: Array.isArray(data.colors) ? data.colors : tryParseJSON(data.colors, []),
-        stock: Number(data.stock) || 0,
-        badge: data.badge || null,
-        active: data.active !== false ? 1 : 0,
-      });
-      saveFallbackStore();
-    }
-    return;
-  }
-
-  try {
-    db.run(
-      `UPDATE products SET name=?, description=?, category_id=?, price=?, old_price=?, cost_price=?,
-       images=?, color_images=?, sizes=?, colors=?, stock=?, badge=?, active=? WHERE id=?`,
-      [
-        data.name,
-        data.description,
-        data.category_id,
-        data.price,
-        data.old_price || null,
-        costPrice,
-        JSON.stringify(data.images || []),
-        JSON.stringify(colorImages || {}),
-        JSON.stringify(data.sizes || []),
-        JSON.stringify(data.colors || []),
-        data.stock || 0,
-        data.badge || null,
-        data.active !== false ? 1 : 0,
-        numId,
-      ]
-    );
-    saveDB();
-  } catch (e) {
-    console.error('updateProduct SQLite error, switching to fallback:', e);
-    isFallbackMode = true;
-    updateProduct(id, data);
+  const idx = (store.products || []).findIndex(p => Number(p.id) === numId);
+  if (idx !== -1) {
+    const existing = store.products[idx];
+    store.products[idx] = {
+      ...existing,
+      ...data,
+      id: numId,
+      category_id: data.category_id ? Number(data.category_id) : existing.category_id,
+      price: data.price !== undefined ? Number(data.price) : existing.price,
+      old_price: data.old_price !== undefined ? (data.old_price ? Number(data.old_price) : null) : existing.old_price,
+      cost_price: data.cost_price !== undefined ? Number(data.cost_price) : existing.cost_price,
+      stock: data.stock !== undefined ? Number(data.stock) : existing.stock,
+      active: data.active !== undefined ? (data.active ? 1 : 0) : existing.active,
+      images: Array.isArray(data.images) ? data.images : existing.images,
+      color_images: data.color_images ? data.color_images : existing.color_images,
+      sizes: Array.isArray(data.sizes) ? data.sizes : existing.sizes,
+      colors: Array.isArray(data.colors) ? data.colors : existing.colors,
+    };
+    persist();
   }
 }
 
 export function deleteProduct(id) {
   const numId = Number(id);
-  if (isFallbackMode || !db) {
-    loadFallbackStore();
-    fallbackStore.products = fallbackStore.products.filter(item => Number(item.id) !== numId);
-    saveFallbackStore();
-    return;
-  }
-
-  try {
-    db.run('DELETE FROM products WHERE id = ?', [numId]);
-    saveDB();
-  } catch (e) {
-    console.error('deleteProduct SQLite error:', e);
-    loadFallbackStore();
-    fallbackStore.products = fallbackStore.products.filter(item => Number(item.id) !== numId);
-    saveFallbackStore();
-  }
+  store.products = (store.products || []).filter(p => Number(p.id) !== numId);
+  persist();
 }
 
 export function clearAllProducts() {
-  if (isFallbackMode || !db) {
-    loadFallbackStore();
-    fallbackStore.products = [];
-    saveFallbackStore();
-    return;
-  }
+  store.products = [];
+  persist();
+}
 
-  try {
-    db.run('DELETE FROM products');
-    saveDB();
-  } catch (e) {
-    console.error('clearAllProducts SQLite error:', e);
-    loadFallbackStore();
-    fallbackStore.products = [];
-    saveFallbackStore();
+// ============ CATEGORIES ============
+export function getCategories(activeOnly = false) {
+  const list = [...(store.categories || [])];
+  return activeOnly ? list.filter(c => c.active === 1) : list;
+}
+
+export function addCategory(name, slug) {
+  const cleanName = String(name || '').trim();
+  const cleanSlug = String(slug || cleanName.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, ''));
+  if (!cleanName) return;
+
+  const newCat = {
+    id: Date.now(),
+    name: cleanName,
+    slug: cleanSlug,
+    active: 1
+  };
+  store.categories = [...(store.categories || []), newCat];
+  persist();
+  return newCat.id;
+}
+
+export function updateCategory(id, name, slug, active) {
+  const numId = Number(id);
+  const cat = (store.categories || []).find(c => Number(c.id) === numId);
+  if (cat) {
+    if (name !== undefined) cat.name = String(name).trim();
+    if (slug !== undefined) cat.slug = String(slug).trim();
+    if (active !== undefined) cat.active = active ? 1 : 0;
+    persist();
   }
 }
 
-// ============ ORDERS ============
-export function getOrders() {
-  if (isFallbackMode || !db) {
-    loadFallbackStore();
-    return [...fallbackStore.orders].reverse();
-  }
-  try {
-    const res = db.exec('SELECT * FROM orders ORDER BY created_at DESC');
-    return rowsToObjects(res).map(o => ({ ...o, items: tryParseJSON(o.items, []) }));
-  } catch {
-    return [...fallbackStore.orders].reverse();
+export function deleteCategory(id) {
+  const numId = Number(id);
+  store.categories = (store.categories || []).filter(c => Number(c.id) !== numId);
+  persist();
+}
+
+// ============ WILAYAS ============
+export function getWilayas(activeOnly = false) {
+  const list = [...(store.wilayas || [])];
+  const filtered = activeOnly ? list.filter(w => w.active === 1) : list;
+  return filtered.sort((a, b) => a.name.localeCompare(b.name, 'fr'));
+}
+
+export function addWilaya(name, deliveryPrice, active = 1) {
+  const cleanName = String(name || '').trim();
+  if (!cleanName) return null;
+  const newW = {
+    id: Date.now(),
+    name: cleanName,
+    delivery_price: parseFloat(deliveryPrice) || 0,
+    active: active ? 1 : 0
+  };
+  store.wilayas = [...(store.wilayas || []), newW];
+  persist();
+  return newW.id;
+}
+
+export function updateWilaya(id, deliveryPriceOrObj, active) {
+  const numId = Number(id);
+  const w = (store.wilayas || []).find(item => Number(item.id) === numId);
+  if (w) {
+    if (typeof deliveryPriceOrObj === 'object' && deliveryPriceOrObj !== null) {
+      if (deliveryPriceOrObj.name) w.name = String(deliveryPriceOrObj.name).trim();
+      if (deliveryPriceOrObj.delivery_price !== undefined) {
+        w.delivery_price = parseFloat(deliveryPriceOrObj.delivery_price) || 0;
+      }
+      if (deliveryPriceOrObj.active !== undefined) {
+        w.active = deliveryPriceOrObj.active ? 1 : 0;
+      }
+    } else {
+      w.delivery_price = parseFloat(deliveryPriceOrObj) || 0;
+      if (active !== undefined) w.active = active ? 1 : 0;
+    }
+    persist();
   }
 }
 
-export function getOrderById(id) {
-  if (isFallbackMode || !db) {
-    return fallbackStore.orders.find(o => o.id === id || o.order_number === id) || null;
-  }
-  try {
-    const res = db.exec('SELECT * FROM orders WHERE id = ? OR order_number = ?', [id, id]);
-    const row = firstRow(res);
-    return row ? { ...row, items: tryParseJSON(row.items, []) } : null;
-  } catch {
-    return fallbackStore.orders.find(o => o.id === id || o.order_number === id) || null;
-  }
+export function deleteWilaya(id) {
+  const numId = Number(id);
+  store.wilayas = (store.wilayas || []).filter(w => Number(w.id) !== numId);
+  persist();
 }
 
+export function resetDefaultWilayas() {
+  store.wilayas = buildDefaultWilayas();
+  persist();
+}
+
+// ============ STOCK HELPERS ============
 export function decrementProductStock(items) {
   if (!Array.isArray(items)) return;
   items.forEach(it => {
     const pId = Number(it.id);
     const qty = Number(it.qty) || 1;
-    if (!pId) return;
-
-    if (isFallbackMode || !db) {
-      loadFallbackStore();
-      const p = fallbackStore.products.find(prod => Number(prod.id) === pId);
-      if (p) {
-        p.stock = Math.max(0, (Number(p.stock) || 0) - qty);
-      }
-    } else {
-      try {
-        db.run('UPDATE products SET stock = MAX(0, stock - ?) WHERE id = ?', [qty, pId]);
-      } catch (e) {
-        console.error('Error decrementing stock:', e);
-      }
+    const p = (store.products || []).find(prod => Number(prod.id) === pId);
+    if (p) {
+      p.stock = Math.max(0, (Number(p.stock) || 0) - qty);
     }
   });
-
-  if (isFallbackMode || !db) {
-    saveFallbackStore();
-  } else {
-    saveDB();
-  }
+  persist();
 }
 
 export function incrementProductStock(items) {
@@ -719,34 +463,27 @@ export function incrementProductStock(items) {
   items.forEach(it => {
     const pId = Number(it.id);
     const qty = Number(it.qty) || 1;
-    if (!pId) return;
-
-    if (isFallbackMode || !db) {
-      loadFallbackStore();
-      const p = fallbackStore.products.find(prod => Number(prod.id) === pId);
-      if (p) {
-        p.stock = (Number(p.stock) || 0) + qty;
-      }
-    } else {
-      try {
-        db.run('UPDATE products SET stock = stock + ? WHERE id = ?', [qty, pId]);
-      } catch (e) {
-        console.error('Error incrementing stock:', e);
-      }
+    const p = (store.products || []).find(prod => Number(prod.id) === pId);
+    if (p) {
+      p.stock = (Number(p.stock) || 0) + qty;
     }
   });
+  persist();
+}
 
-  if (isFallbackMode || !db) {
-    saveFallbackStore();
-  } else {
-    saveDB();
-  }
+// ============ ORDERS ============
+export function getOrders() {
+  return [...(store.orders || [])];
+}
+
+export function getOrderById(id) {
+  return (store.orders || []).find(o => o.id === id || o.order_number === id) || null;
 }
 
 export function createOrder(data) {
   const orderNumber = 'WS-' + Date.now().toString().slice(-8).toUpperCase();
   const deliveryType = data.delivery_type || 'home';
-  const items = Array.isArray(data.items) ? data.items : tryParseJSON(data.items, []);
+  const items = Array.isArray(data.items) ? data.items : [];
 
   const newOrder = {
     ...data,
@@ -758,340 +495,81 @@ export function createOrder(data) {
     created_at: new Date().toISOString()
   };
 
-  // Deduct ordered quantities from stock
+  // 1. Deduct ordered quantities from stock
   decrementProductStock(items);
 
-  if (isFallbackMode || !db) {
-    fallbackStore.orders.push(newOrder);
-    saveFallbackStore();
-    return orderNumber;
-  }
-
-  try {
-    db.run(
-      `INSERT INTO orders (order_number, customer_name, customer_phone, customer_email,
-       delivery_type, wilaya, commune, address, note, items, subtotal, delivery_price, total, status)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        orderNumber, data.customer_name, data.customer_phone, data.customer_email || '',
-        deliveryType, data.wilaya, data.commune || '', data.address || '', data.note || '',
-        JSON.stringify(items), data.subtotal, data.delivery_price, data.total,
-        'pending',
-      ]
-    );
-    saveDB();
-    return orderNumber;
-  } catch (e) {
-    try {
-      db.run(
-        `INSERT INTO orders (order_number, customer_name, customer_phone, customer_email,
-         wilaya, commune, address, note, items, subtotal, delivery_price, total, status)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
-          orderNumber, data.customer_name, data.customer_phone, data.customer_email || '',
-          data.wilaya, data.commune || '', data.address || '', data.note || '',
-          JSON.stringify(items), data.subtotal, data.delivery_price, data.total,
-          'pending',
-        ]
-      );
-      saveDB();
-      return orderNumber;
-    } catch (_) {
-      fallbackStore.orders.push(newOrder);
-      saveFallbackStore();
-      return orderNumber;
-    }
-  }
+  // 2. Save new order
+  store.orders = [newOrder, ...(store.orders || [])];
+  persist();
+  return orderNumber;
 }
 
 export function updateOrderStatus(id, status) {
-  const currentOrder = getOrderById(id);
-  const oldStatus = currentOrder?.status;
-
-  // Manage stock on cancellation or uncancellation
-  if (currentOrder && Array.isArray(currentOrder.items)) {
+  const order = (store.orders || []).find(o => o.id === id || o.order_number === id);
+  if (order) {
+    const oldStatus = order.status;
     if (oldStatus !== 'cancelled' && status === 'cancelled') {
-      // Returning to stock when order is cancelled
-      incrementProductStock(currentOrder.items);
+      // Returning to stock when cancelled!
+      incrementProductStock(order.items);
     } else if (oldStatus === 'cancelled' && status !== 'cancelled') {
-      // Deduct from stock when order is reactivated
-      decrementProductStock(currentOrder.items);
+      // Deduct from stock when re-activated!
+      decrementProductStock(order.items);
     }
-  }
-
-  if (isFallbackMode || !db) {
-    const o = fallbackStore.orders.find(item => item.id === id || item.order_number === id);
-    if (o) {
-      o.status = status;
-      saveFallbackStore();
-    }
-    return;
-  }
-  try {
-    db.run('UPDATE orders SET status = ? WHERE id = ? OR order_number = ?', [status, id, id]);
-    saveDB();
-  } catch {
-    const o = fallbackStore.orders.find(item => item.id === id || item.order_number === id);
-    if (o) {
-      o.status = status;
-      saveFallbackStore();
-    }
+    order.status = status;
+    persist();
   }
 }
 
 export function deleteOrder(id) {
-  const currentOrder = getOrderById(id);
-  if (currentOrder && currentOrder.status !== 'cancelled' && Array.isArray(currentOrder.items)) {
-    // If order was not cancelled, return stock before deletion
-    incrementProductStock(currentOrder.items);
+  const order = (store.orders || []).find(o => o.id === id || o.order_number === id);
+  if (order && order.status !== 'cancelled') {
+    incrementProductStock(order.items);
   }
-
-  const numId = Number(id);
-  if (isFallbackMode || !db) {
-    loadFallbackStore();
-    fallbackStore.orders = fallbackStore.orders.filter(item => Number(item.id) !== numId && item.order_number !== id);
-    saveFallbackStore();
-    return;
-  }
-  try {
-    db.run('DELETE FROM orders WHERE id = ? OR order_number = ?', [numId, id]);
-    saveDB();
-  } catch {
-    loadFallbackStore();
-    fallbackStore.orders = fallbackStore.orders.filter(item => Number(item.id) !== numId && item.order_number !== id);
-    saveFallbackStore();
-  }
-}
-
-// ============ WILAYAS ============
-export function getWilayas(activeOnly = false) {
-  if (isFallbackMode || !db) {
-    loadFallbackStore();
-    const list = activeOnly ? fallbackStore.wilayas.filter(w => w.active === 1) : [...fallbackStore.wilayas];
-    return list.sort((a, b) => a.name.localeCompare(b.name, 'fr'));
-  }
-  try {
-    const sql = activeOnly
-      ? 'SELECT * FROM wilayas WHERE active = 1 ORDER BY name ASC'
-      : 'SELECT * FROM wilayas ORDER BY name ASC';
-    return rowsToObjects(db.exec(sql));
-  } catch {
-    loadFallbackStore();
-    const list = activeOnly ? fallbackStore.wilayas.filter(w => w.active === 1) : [...fallbackStore.wilayas];
-    return list.sort((a, b) => a.name.localeCompare(b.name, 'fr'));
-  }
-}
-
-export function addWilaya(name, deliveryPrice, active = 1) {
-  const price = parseFloat(deliveryPrice) || 0;
-  const cleanName = String(name || '').trim();
-  if (!cleanName) return null;
-
-  if (isFallbackMode || !db) {
-    loadFallbackStore();
-    const newW = {
-      id: Date.now(),
-      name: cleanName,
-      delivery_price: price,
-      active: active ? 1 : 0,
-    };
-    fallbackStore.wilayas.push(newW);
-    saveFallbackStore();
-    return newW.id;
-  }
-
-  try {
-    db.run('INSERT INTO wilayas (name, delivery_price, active) VALUES (?, ?, ?)', [cleanName, price, active ? 1 : 0]);
-    saveDB();
-    const res = db.exec('SELECT last_insert_rowid() as id');
-    return res[0]?.values[0]?.[0];
-  } catch (e) {
-    console.error('addWilaya SQLite error:', e);
-    loadFallbackStore();
-    const newW = {
-      id: Date.now(),
-      name: cleanName,
-      delivery_price: price,
-      active: active ? 1 : 0,
-    };
-    fallbackStore.wilayas.push(newW);
-    saveFallbackStore();
-    return newW.id;
-  }
-}
-
-export function updateWilaya(id, deliveryPriceOrObj, active) {
-  const numId = Number(id);
-  let name = null;
-  let price = 0;
-  let act = 1;
-
-  if (typeof deliveryPriceOrObj === 'object' && deliveryPriceOrObj !== null) {
-    name = deliveryPriceOrObj.name ? String(deliveryPriceOrObj.name).trim() : null;
-    price = parseFloat(deliveryPriceOrObj.delivery_price ?? deliveryPriceOrObj.deliveryPrice) || 0;
-    act = deliveryPriceOrObj.active !== undefined ? (deliveryPriceOrObj.active ? 1 : 0) : 1;
-  } else {
-    price = parseFloat(deliveryPriceOrObj) || 0;
-    act = active !== undefined ? (active ? 1 : 0) : 1;
-  }
-
-  if (isFallbackMode || !db) {
-    loadFallbackStore();
-    const w = fallbackStore.wilayas.find(item => Number(item.id) === numId);
-    if (w) {
-      if (name) w.name = name;
-      w.delivery_price = price;
-      w.active = act;
-      saveFallbackStore();
-    }
-    return;
-  }
-
-  try {
-    if (name) {
-      db.run('UPDATE wilayas SET name=?, delivery_price=?, active=? WHERE id=?', [name, price, act, numId]);
-    } else {
-      db.run('UPDATE wilayas SET delivery_price=?, active=? WHERE id=?', [price, act, numId]);
-    }
-    saveDB();
-  } catch (e) {
-    console.error('updateWilaya SQLite error:', e);
-    loadFallbackStore();
-    const w = fallbackStore.wilayas.find(item => Number(item.id) === numId);
-    if (w) {
-      if (name) w.name = name;
-      w.delivery_price = price;
-      w.active = act;
-      saveFallbackStore();
-    }
-  }
-}
-
-export function deleteWilaya(id) {
-  const numId = Number(id);
-  if (isFallbackMode || !db) {
-    loadFallbackStore();
-    fallbackStore.wilayas = fallbackStore.wilayas.filter(item => Number(item.id) !== numId);
-    saveFallbackStore();
-    return;
-  }
-
-  try {
-    db.run('DELETE FROM wilayas WHERE id=?', [numId]);
-    saveDB();
-  } catch (e) {
-    console.error('deleteWilaya SQLite error:', e);
-    loadFallbackStore();
-    fallbackStore.wilayas = fallbackStore.wilayas.filter(item => Number(item.id) !== numId);
-    saveFallbackStore();
-  }
-}
-
-export function resetDefaultWilayas() {
-  const wilayas = defaultWilayasList.map((name, i) => ({
-    id: i + 1,
-    name,
-    delivery_price: name === 'Alger' ? 400 : name === 'Oran' || name === 'Constantine' ? 500 : 700,
-    active: 1
-  }));
-
-  if (isFallbackMode || !db) {
-    loadFallbackStore();
-    fallbackStore.wilayas = wilayas;
-    saveFallbackStore();
-    return;
-  }
-
-  try {
-    db.run('DELETE FROM wilayas');
-    wilayas.forEach(w => {
-      db.run('INSERT INTO wilayas (id, name, delivery_price, active) VALUES (?, ?, ?, ?)', [w.id, w.name, w.delivery_price, w.active]);
-    });
-    saveDB();
-  } catch {
-    loadFallbackStore();
-    fallbackStore.wilayas = wilayas;
-    saveFallbackStore();
-  }
+  store.orders = (store.orders || []).filter(o => o.id !== id && o.order_number !== id);
+  persist();
 }
 
 // ============ STATS ============
 export function getStats() {
-  if (isFallbackMode || !db) {
-    loadFallbackStore();
-    const orders = fallbackStore.orders || [];
-    const validOrders = orders.filter(o => o.status !== 'cancelled');
-    const revenue = validOrders.reduce((sum, o) => sum + (Number(o.total) || 0), 0);
-    const pending = orders.filter(o => o.status === 'pending').length;
-    const cancelled = orders.filter(o => o.status === 'cancelled').length;
-    const activeProducts = (fallbackStore.products || []).filter(p => p.active === 1).length;
-    return {
-      totalOrders: validOrders.length,
-      totalAllOrders: orders.length,
-      cancelledOrders: cancelled,
-      totalRevenue: revenue,
-      pendingOrders: pending,
-      totalProducts: activeProducts
-    };
-  }
+  const orders = store.orders || [];
+  const validOrders = orders.filter(o => o.status !== 'cancelled');
+  const revenue = validOrders.reduce((sum, o) => sum + (Number(o.total) || 0), 0);
+  const pending = orders.filter(o => o.status === 'pending').length;
+  const cancelled = orders.filter(o => o.status === 'cancelled').length;
+  const activeProducts = (store.products || []).filter(p => p.active !== 0).length;
 
-  try {
-    const validOrdersRes = db.exec("SELECT COUNT(*) as count, COALESCE(SUM(total), 0) as revenue FROM orders WHERE status != 'cancelled'");
-    const totalAllRes = db.exec("SELECT COUNT(*) as count FROM orders");
-    const pendingRes = db.exec("SELECT COUNT(*) as count FROM orders WHERE status = 'pending'");
-    const cancelledRes = db.exec("SELECT COUNT(*) as count FROM orders WHERE status = 'cancelled'");
-    const productsRes = db.exec("SELECT COUNT(*) as count FROM products WHERE active = 1");
+  return {
+    totalOrders: validOrders.length,
+    totalAllOrders: orders.length,
+    cancelledOrders: cancelled,
+    totalRevenue: revenue,
+    pendingOrders: pending,
+    totalProducts: activeProducts
+  };
+}
 
-    const valid = firstRow(validOrdersRes);
-    const totalAll = firstRow(totalAllRes);
-    const pending = firstRow(pendingRes);
-    const cancelled = firstRow(cancelledRes);
-    const products = firstRow(productsRes);
+// ============ SETTINGS ============
+export function getSetting(key) {
+  return store.settings?.[key] ?? defaultSettings[key] ?? null;
+}
 
-    return {
-      totalOrders: valid?.count || 0,
-      totalAllOrders: totalAll?.count || 0,
-      cancelledOrders: cancelled?.count || 0,
-      totalRevenue: valid?.revenue || 0,
-      pendingOrders: pending?.count || 0,
-      totalProducts: products?.count || 0,
-    };
-  } catch {
-    const orders = fallbackStore.orders || [];
-    const validOrders = orders.filter(o => o.status !== 'cancelled');
-    return {
-      totalOrders: validOrders.length,
-      totalAllOrders: orders.length,
-      cancelledOrders: orders.filter(o => o.status === 'cancelled').length,
-      totalRevenue: validOrders.reduce((sum, o) => sum + (Number(o.total) || 0), 0),
-      pendingOrders: orders.filter(o => o.status === 'pending').length,
-      totalProducts: (fallbackStore.products || []).filter(p => p.active === 1).length
-    };
-  }
+export function setSetting(key, value) {
+  if (!store.settings) store.settings = { ...defaultSettings };
+  store.settings[key] = String(value ?? '');
+  persist();
+}
+
+export function getAllSettings() {
+  return { ...defaultSettings, ...(store.settings || {}) };
 }
 
 // ============ BACKUP / RESTORE ============
 export function exportDB() {
-  if (isFallbackMode || !db) {
-    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(fallbackStore));
-    const a = document.createElement('a');
-    a.href = dataStr;
-    a.download = `walid-shop-backup-${new Date().toISOString().slice(0,10)}.json`;
-    a.click();
-    return;
-  }
-  try {
-    const data = db.export();
-    const blob = new Blob([data], { type: 'application/octet-stream' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `walid-shop-backup-${new Date().toISOString().slice(0,10)}.sqlite`;
-    a.click();
-    URL.revokeObjectURL(url);
-  } catch (e) {
-    console.error('Export error:', e);
-  }
+  const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(store, null, 2));
+  const a = document.createElement('a');
+  a.href = dataStr;
+  a.download = `walid-shop-backup-${new Date().toISOString().slice(0, 10)}.json`;
+  a.click();
 }
 
 export async function importDB(file) {
@@ -1099,29 +577,25 @@ export async function importDB(file) {
     const reader = new FileReader();
     reader.onload = (e) => {
       try {
-        if (file.name.endsWith('.json')) {
-          const parsed = JSON.parse(e.target.result);
-          fallbackStore = parsed;
-          saveFallbackStore();
-          isFallbackMode = true;
+        const parsed = JSON.parse(e.target.result);
+        if (parsed && typeof parsed === 'object') {
+          store = {
+            settings: { ...defaultSettings, ...(parsed.settings || {}) },
+            categories: Array.isArray(parsed.categories) ? parsed.categories : [...defaultCategories],
+            wilayas: Array.isArray(parsed.wilayas) ? parsed.wilayas : buildDefaultWilayas(),
+            products: Array.isArray(parsed.products) ? parsed.products : [],
+            orders: Array.isArray(parsed.orders) ? parsed.orders : []
+          };
+          persist();
           resolve(true);
-          return;
+        } else {
+          reject(new Error('Invalid backup file'));
         }
-        const uint8 = new Uint8Array(e.target.result);
-        if (SQL) {
-          db = new SQL.Database(uint8);
-          const arr = Array.from(uint8);
-          localStorage.setItem(DB_KEY, JSON.stringify(arr));
-        }
-        resolve(true);
       } catch (err) {
         reject(err);
       }
     };
-    if (file.name.endsWith('.json')) {
-      reader.readAsText(file);
-    } else {
-      reader.readAsArrayBuffer(file);
-    }
+    reader.onerror = reject;
+    reader.readAsText(file);
   });
 }

@@ -10,22 +10,22 @@ export default function ProductDetailPage() {
   const { dbReady, addToCart } = useApp();
   const navigate = useNavigate();
 
-  const [product, setProduct] = useState(null);
-  const [selectedSize, setSelectedSize] = useState('');
-  const [selectedColor, setSelectedColor] = useState('');
+  const [product, setProduct] = useState(() => getProductById(parseInt(id)));
+  const [selectedSize, setSelectedSize] = useState(() => product?.sizes?.[0] || '');
+  const [selectedColor, setSelectedColor] = useState(() => product?.colors?.[0] || '');
   const [selectedImg, setSelectedImg] = useState(0);
   const [customColorImg, setCustomColorImg] = useState(null);
   const [qty, setQty] = useState(1);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => !product);
 
-  useEffect(() => {
+  const loadProduct = () => {
     try {
       const p = getProductById(parseInt(id));
       if (p) {
         setProduct(p);
-        setSelectedSize(p.sizes?.[0] || '');
+        setSelectedSize(prev => prev || p.sizes?.[0] || '');
         const initialColor = p.colors?.[0] || '';
-        setSelectedColor(initialColor);
+        setSelectedColor(prev => prev || initialColor);
         if (p.color_images && p.color_images[initialColor]) {
           const idx = p.images?.indexOf(p.color_images[initialColor]);
           if (idx !== -1 && idx !== undefined) {
@@ -40,6 +40,13 @@ export default function ProductDetailPage() {
     } finally {
       setLoading(false);
     }
+  };
+
+  useEffect(() => {
+    loadProduct();
+    const handleStoreChange = () => loadProduct();
+    window.addEventListener('walid_shop_store_change', handleStoreChange);
+    return () => window.removeEventListener('walid_shop_store_change', handleStoreChange);
   }, [dbReady, id]);
 
   const handleColorClick = (color, index) => {

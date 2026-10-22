@@ -27,6 +27,9 @@ export default function AdminWilayas() {
 
   useEffect(() => {
     loadWilayas();
+    const handleStoreChange = () => loadWilayas();
+    window.addEventListener('walid_shop_store_change', handleStoreChange);
+    return () => window.removeEventListener('walid_shop_store_change', handleStoreChange);
   }, []);
 
   const handleAdd = (e) => {

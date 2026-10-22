@@ -14,13 +14,20 @@ export default function AdminDashboard({ onNavigate }) {
   });
   const [recentOrders, setRecentOrders] = useState([]);
 
-  useEffect(() => {
+  const loadDashboard = () => {
     try {
       setStats(getStats());
       setRecentOrders(getOrders().slice(0, 7));
     } catch (e) {
       console.error('Failed to load dashboard data:', e);
     }
+  };
+
+  useEffect(() => {
+    loadDashboard();
+    const handleStoreChange = () => loadDashboard();
+    window.addEventListener('walid_shop_store_change', handleStoreChange);
+    return () => window.removeEventListener('walid_shop_store_change', handleStoreChange);
   }, []);
 
   const statCards = [

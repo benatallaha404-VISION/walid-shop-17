@@ -7,7 +7,8 @@ import BrandLogosTicker from '../components/BrandLogos.jsx';
 import GoogleMapEmbed from '../components/GoogleMapEmbed.jsx';
 
 function HeroSlider({ title, subtitle, tag, image }) {
-  const titleLines = title ? title.split('\n') : ['Style Defines', 'Your Story'];
+  const currentTitle = title || 'Walid Shop';
+  const titleLines = currentTitle.split('\n');
 
   return (
     <section className="hero" id="hero-section">
@@ -31,7 +32,7 @@ function HeroSlider({ title, subtitle, tag, image }) {
               </React.Fragment>
             ))}
           </h1>
-          <p className="hero-subtitle">{subtitle || 'Découvrez la collection premium'}</p>
+          <p className="hero-subtitle">{subtitle || 'متجركم المفضل للأناقة والموضة الرجالية'}</p>
         </div>
       </div>
       <BrandLogosTicker />
@@ -168,20 +169,26 @@ function CategoryDropdown({ categories, activeCategory, onSelect }) {
 export default function ShopPage() {
   const { dbReady } = useApp();
   const [searchParams] = useSearchParams();
-  const [products, setProducts] = useState([]);
-  const [categories, setCategories] = useState([]);
+  const initialSettings = getAllSettings();
+  const [products, setProducts] = useState(() => getProducts());
+  const [categories, setCategories] = useState(() => getCategories(true));
   const [activeCategory, setActiveCategory] = useState(null);
   const [sort, setSort] = useState('newest');
-  const [heroData, setHeroData] = useState({});
-  const [storeSettings, setStoreSettings] = useState({});
-  const [loading, setLoading] = useState(true);
+  const [heroData, setHeroData] = useState(() => ({
+    title: initialSettings.hero_title || 'Walid Shop',
+    subtitle: initialSettings.hero_subtitle || 'متجركم المفضل للأناقة والموضة الرجالية',
+    tag: initialSettings.hero_tag || 'Walid Shop Collection',
+    image: initialSettings.hero_image || ''
+  }));
+  const [storeSettings, setStoreSettings] = useState(() => initialSettings);
+  const [loading, setLoading] = useState(false);
 
   const searchQuery = searchParams.get('search') || '';
 
   const loadData = useCallback(() => {
     try {
       const cats = getCategories(true);
-      if (cats && cats.length) setCategories(cats);
+      if (cats) setCategories(cats);
 
       const prods = getProducts({
         categoryId: activeCategory,
@@ -193,10 +200,10 @@ export default function ShopPage() {
       const allSettings = getAllSettings();
       setStoreSettings(allSettings);
       setHeroData({
-        title: allSettings.hero_title,
-        subtitle: allSettings.hero_subtitle,
-        tag: allSettings.hero_tag,
-        image: allSettings.hero_image
+        title: allSettings.hero_title || 'Walid Shop',
+        subtitle: allSettings.hero_subtitle || 'متجركم المفضل للأناقة والموضة الرجالية',
+        tag: allSettings.hero_tag || 'Walid Shop Collection',
+        image: allSettings.hero_image || ''
       });
     } catch (e) {
       console.error('Error loading shop data:', e);
@@ -207,6 +214,9 @@ export default function ShopPage() {
 
   useEffect(() => {
     loadData();
+    const handleStoreChange = () => loadData();
+    window.addEventListener('walid_shop_store_change', handleStoreChange);
+    return () => window.removeEventListener('walid_shop_store_change', handleStoreChange);
   }, [dbReady, loadData]);
 
   return (
