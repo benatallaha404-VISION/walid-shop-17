@@ -1,7 +1,7 @@
 // src/pages/admin/AdminSettings.jsx
 import React, { useState, useEffect, useRef } from 'react';
-import { Save, Image, Download, Upload, MapPin, Trash2 } from 'lucide-react';
-import { getAllSettings, setSetting, exportDB, importDB, clearAllProducts, compressImage } from '../../db.js';
+import { Save, Image, Download, Upload, MapPin, Trash2, Lock, Eye, EyeOff } from 'lucide-react';
+import { getAllSettings, setSetting, getSetting, exportDB, importDB, clearAllProducts, compressImage } from '../../db.js';
 import { useApp } from '../../context/AppContext.jsx';
 import GoogleMapEmbed from '../../components/GoogleMapEmbed.jsx';
 
@@ -10,6 +10,11 @@ export default function AdminSettings() {
   const [settings, setSettings] = useState({});
   const heroFileRef = useRef();
   const importRef = useRef();
+  const [pwOld, setPwOld] = useState('');
+  const [pwNew, setPwNew] = useState('');
+  const [pwConfirm, setPwConfirm] = useState('');
+  const [showPwOld, setShowPwOld] = useState(false);
+  const [showPwNew, setShowPwNew] = useState(false);
 
   useEffect(() => {
     try {
@@ -67,6 +72,29 @@ export default function AdminSettings() {
         console.error('Error clearing products:', err);
       }
     }
+  };
+
+  const handleChangePassword = () => {
+    const currentPw = getSetting('admin_password') || 'WALID123';
+    if (!pwOld || !pwNew || !pwConfirm) {
+      addToast('Veuillez remplir tous les champs.', 'error');
+      return;
+    }
+    if (pwOld !== currentPw) {
+      addToast('كلمة المرور الحالية غير صحيحة.', 'error');
+      return;
+    }
+    if (pwNew.length < 4) {
+      addToast('كلمة المرور الجديدة يجب أن تكون 4 أحرف على الأقل.', 'error');
+      return;
+    }
+    if (pwNew !== pwConfirm) {
+      addToast('كلمات المرور الجديدة غير متطابقة.', 'error');
+      return;
+    }
+    setSetting('admin_password', pwNew);
+    addToast('✅ تم تغيير كلمة المرور بنجاح!', 'success');
+    setPwOld(''); setPwNew(''); setPwConfirm('');
   };
 
   const storeFields = [
@@ -263,10 +291,74 @@ export default function AdminSettings() {
         </div>
       </div>
 
+      {/* Change Admin Password */}
+      <div className="admin-card" style={{ marginBottom: 24 }}>
+        <div className="admin-card-header" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <Lock size={18} style={{ color: 'var(--gold)' }} />
+          <h3>كلمة سر لوحة التحكم (Mot de passe Admin)</h3>
+        </div>
+        <div style={{ padding: 20 }}>
+          <p style={{ fontSize: 13, color: 'var(--gray)', marginBottom: 16 }}>
+            يمكنك تغيير كلمة مرور الدخول إلى لوحة التحكم. كلمة المرور الافتراضية هي <strong>WALID123</strong>.
+          </p>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 16, maxWidth: 720 }}>
+            <div className="form-group" style={{ margin: 0 }}>
+              <label style={{ fontSize: 13, fontWeight: 700 }}>كلمة المرور الحالية</label>
+              <div style={{ position: 'relative' }}>
+                <input
+                  className="form-input"
+                  type={showPwOld ? 'text' : 'password'}
+                  value={pwOld}
+                  onChange={e => setPwOld(e.target.value)}
+                  id="setting-pw-old"
+                  style={{ paddingRight: 40 }}
+                />
+                <button type="button" onClick={() => setShowPwOld(p => !p)}
+                  style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)',
+                    background: 'none', border: 'none', cursor: 'pointer', color: 'var(--gray)' }}>
+                  {showPwOld ? <EyeOff size={15} /> : <Eye size={15} />}
+                </button>
+              </div>
+            </div>
+            <div className="form-group" style={{ margin: 0 }}>
+              <label style={{ fontSize: 13, fontWeight: 700 }}>كلمة المرور الجديدة</label>
+              <div style={{ position: 'relative' }}>
+                <input
+                  className="form-input"
+                  type={showPwNew ? 'text' : 'password'}
+                  value={pwNew}
+                  onChange={e => setPwNew(e.target.value)}
+                  id="setting-pw-new"
+                  style={{ paddingRight: 40 }}
+                />
+                <button type="button" onClick={() => setShowPwNew(p => !p)}
+                  style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)',
+                    background: 'none', border: 'none', cursor: 'pointer', color: 'var(--gray)' }}>
+                  {showPwNew ? <EyeOff size={15} /> : <Eye size={15} />}
+                </button>
+              </div>
+            </div>
+            <div className="form-group" style={{ margin: 0 }}>
+              <label style={{ fontSize: 13, fontWeight: 700 }}>تأكيد كلمة المرور الجديدة</label>
+              <input
+                className="form-input"
+                type="password"
+                value={pwConfirm}
+                onChange={e => setPwConfirm(e.target.value)}
+                id="setting-pw-confirm"
+              />
+            </div>
+          </div>
+          <button className="btn btn-primary" onClick={handleChangePassword} style={{ marginTop: 20 }}>
+            <Lock size={15} /> تغيير كلمة المرور
+          </button>
+        </div>
+      </div>
+
       {/* Backup, Clean & Restore */}
       <div className="admin-card">
         <div className="admin-card-header">
-          <h3>Sauvegarde & Nettoyage des Données</h3>
+          <h3>Sauvegarde &amp; Nettoyage des Données</h3>
         </div>
         <div style={{ padding: 20 }}>
           <p style={{ fontSize: 13, color: 'var(--gray)', marginBottom: 16 }}>

@@ -9,11 +9,19 @@ import AdminOrders from './admin/AdminOrders.jsx';
 import AdminCategories from './admin/AdminCategories.jsx';
 import AdminWilayas from './admin/AdminWilayas.jsx';
 import AdminSettings from './admin/AdminSettings.jsx';
+import AdminLogin from './admin/AdminLogin.jsx';
 
 export default function AdminPage() {
   const { dbReady } = useApp();
   const [activeTab, setActiveTab] = useState('dashboard');
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [authenticated, setAuthenticated] = useState(
+    () => sessionStorage.getItem('admin_auth') === '1'
+  );
+
+  if (!authenticated) {
+    return <AdminLogin onSuccess={() => setAuthenticated(true)} />;
+  }
 
   const renderSection = () => {
     switch (activeTab) {

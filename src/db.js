@@ -21,6 +21,7 @@ export const defaultSettings = {
   emailjs_service_id: '',
   emailjs_template_id: '',
   emailjs_public_key: '',
+  admin_password: 'WALID123',
 };
 
 export const defaultCategories = [
