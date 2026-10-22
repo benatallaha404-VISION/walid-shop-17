@@ -273,87 +273,110 @@ app.post('/api/wilayas/reset', (req, res) => {
 });
 
 // ─── PRODUCTS ─────────────────────────────────────────────────────────────────
+// ─── PRODUCTS ─────────────────────────────────────────────────────────────────
 app.get('/api/products', (req, res) => {
-  const { category, search, sort, admin } = req.query;
-  let sql = admin === '1'
-    ? 'SELECT p.*, c.name as category_name, c.slug as category_slug FROM products p LEFT JOIN categories c ON p.category_id=c.id'
-    : 'SELECT p.*, c.name as category_name, c.slug as category_slug FROM products p LEFT JOIN categories c ON p.category_id=c.id WHERE p.active=1';
+  try {
+    const { category, search, sort, admin } = req.query;
+    let sql = 'SELECT p.*, c.name as category_name, c.slug as category_slug FROM products p LEFT JOIN categories c ON p.category_id=c.id';
+    const conditions = [];
+    const params = [];
 
-  const params = [];
-  const conditions = [];
-  if (admin !== '1') conditions.push('p.active=1');
+    if (admin !== '1') {
+      conditions.push('p.active=1');
+    }
 
-  if (category) { conditions.push('p.category_id=?'); params.push(category); }
-  if (search) { conditions.push('(p.name LIKE ? OR p.description LIKE ?)'); params.push(`%${search}%`, `%${search}%`); }
+    if (category && category !== 'null' && category !== 'undefined') {
+      conditions.push('p.category_id=?');
+      params.push(Number(category));
+    }
 
-  if (admin === '1') {
-    sql = `SELECT p.*, c.name as category_name, c.slug as category_slug FROM products p LEFT JOIN categories c ON p.category_id=c.id`;
-    const where = conditions.join(' AND ');
-    if (where) sql += ` WHERE ${where}`;
-  } else {
-    sql = `SELECT p.*, c.name as category_name, c.slug as category_slug FROM products p LEFT JOIN categories c ON p.category_id=c.id WHERE p.active=1`;
-    if (category) { sql += ' AND p.category_id=?'; params.push(category); }
-    if (search) { sql += ' AND (p.name LIKE ? OR p.description LIKE ?)'; params.push(`%${search}%`, `%${search}%`); }
+    if (search && search.trim() && search !== 'null') {
+      conditions.push('(p.name LIKE ? OR p.description LIKE ?)');
+      params.push(`%${search.trim()}%`, `%${search.trim()}%`);
+    }
+
+    if (conditions.length > 0) {
+      sql += ' WHERE ' + conditions.join(' AND ');
+    }
+
+    if (sort === 'price_asc') sql += ' ORDER BY p.price ASC';
+    else if (sort === 'price_desc') sql += ' ORDER BY p.price DESC';
+    else sql += ' ORDER BY p.id DESC';
+
+    const rows = db.prepare(sql).all(...params);
+    res.json(rows.map(parseProduct));
+  } catch (err) {
+    console.error('Error fetching products:', err);
+    res.status(500).json({ error: err.message });
   }
-
-  if (sort === 'price_asc') sql += ' ORDER BY p.price ASC';
-  else if (sort === 'price_desc') sql += ' ORDER BY p.price DESC';
-  else sql += ' ORDER BY p.id DESC';
-
-  const rows = db.prepare(sql).all(...params);
-  res.json(rows.map(parseProduct));
 });
 
 app.get('/api/products/:id', (req, res) => {
-  const row = db.prepare('SELECT p.*, c.name as category_name, c.slug as category_slug FROM products p LEFT JOIN categories c ON p.category_id=c.id WHERE p.id=?').get(req.params.id);
-  if (!row) return res.status(404).json({ error: 'Not found' });
-  res.json(parseProduct(row));
+  try {
+    const row = db.prepare('SELECT p.*, c.name as category_name, c.slug as category_slug FROM products p LEFT JOIN categories c ON p.category_id=c.id WHERE p.id=?').get(req.params.id);
+    if (!row) return res.status(404).json({ error: 'Not found' });
+    res.json(parseProduct(row));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 app.post('/api/products', (req, res) => {
-  const d = req.body;
-  const info = db.prepare(`
-    INSERT INTO products(name,description,category_id,price,old_price,cost_price,stock,badge,active,images,color_images,sizes,colors)
-    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)
-  `).run(
-    d.name, d.description || '', d.category_id || null,
-    Number(d.price) || 0, d.old_price ? Number(d.old_price) : null,
-    Number(d.cost_price) || 0, Number(d.stock) || 0,
-    d.badge || null, d.active !== false ? 1 : 0,
-    JSON.stringify(d.images || []),
-    JSON.stringify(d.color_images || {}),
-    JSON.stringify(d.sizes || []),
-    JSON.stringify(d.colors || [])
-  );
-  res.json({ id: info.lastInsertRowid });
+  try {
+    const d = req.body;
+    const catId = (d.category_id && d.category_id !== 'null') ? Number(d.category_id) : null;
+    const info = db.prepare(`
+      INSERT INTO products(name,description,category_id,price,old_price,cost_price,stock,badge,active,images,color_images,sizes,colors)
+      VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)
+    `).run(
+      d.name, d.description || '', catId,
+      Number(d.price) || 0, d.old_price ? Number(d.old_price) : null,
+      Number(d.cost_price) || 0, Number(d.stock) || 0,
+      d.badge || null, d.active !== false ? 1 : 0,
+      JSON.stringify(d.images || []),
+      JSON.stringify(d.color_images || {}),
+      JSON.stringify(d.sizes || []),
+      JSON.stringify(d.colors || [])
+    );
+    res.json({ id: info.lastInsertRowid });
+  } catch (err) {
+    console.error('Error adding product:', err);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 app.put('/api/products/:id', (req, res) => {
-  const d = req.body;
-  db.prepare(`
-    UPDATE products SET
-      name=COALESCE(?,name), description=COALESCE(?,description),
-      category_id=?, price=COALESCE(?,price), old_price=?,
-      cost_price=COALESCE(?,cost_price), stock=COALESCE(?,stock),
-      badge=?, active=COALESCE(?,active),
-      images=COALESCE(?,images), color_images=COALESCE(?,color_images),
-      sizes=COALESCE(?,sizes), colors=COALESCE(?,colors)
-    WHERE id=?
-  `).run(
-    d.name, d.description, d.category_id ?? null,
-    d.price !== undefined ? Number(d.price) : undefined,
-    d.old_price !== undefined ? (d.old_price ? Number(d.old_price) : null) : undefined,
-    d.cost_price !== undefined ? Number(d.cost_price) : undefined,
-    d.stock !== undefined ? Number(d.stock) : undefined,
-    d.badge !== undefined ? d.badge : undefined,
-    d.active !== undefined ? (d.active ? 1 : 0) : undefined,
-    d.images !== undefined ? JSON.stringify(d.images) : undefined,
-    d.color_images !== undefined ? JSON.stringify(d.color_images) : undefined,
-    d.sizes !== undefined ? JSON.stringify(d.sizes) : undefined,
-    d.colors !== undefined ? JSON.stringify(d.colors) : undefined,
-    req.params.id
-  );
-  res.json({ ok: true });
+  try {
+    const d = req.body;
+    const catId = (d.category_id !== undefined) ? ((d.category_id && d.category_id !== 'null') ? Number(d.category_id) : null) : undefined;
+    db.prepare(`
+      UPDATE products SET
+        name=COALESCE(?,name), description=COALESCE(?,description),
+        category_id=COALESCE(?,category_id), price=COALESCE(?,price), old_price=?,
+        cost_price=COALESCE(?,cost_price), stock=COALESCE(?,stock),
+        badge=?, active=COALESCE(?,active),
+        images=COALESCE(?,images), color_images=COALESCE(?,color_images),
+        sizes=COALESCE(?,sizes), colors=COALESCE(?,colors)
+      WHERE id=?
+    `).run(
+      d.name ?? null, d.description ?? null, catId ?? null,
+      d.price !== undefined ? Number(d.price) : null,
+      d.old_price !== undefined ? (d.old_price ? Number(d.old_price) : null) : null,
+      d.cost_price !== undefined ? Number(d.cost_price) : null,
+      d.stock !== undefined ? Number(d.stock) : null,
+      d.badge !== undefined ? d.badge : null,
+      d.active !== undefined ? (d.active ? 1 : 0) : null,
+      d.images !== undefined ? JSON.stringify(d.images) : null,
+      d.color_images !== undefined ? JSON.stringify(d.color_images) : null,
+      d.sizes !== undefined ? JSON.stringify(d.sizes) : null,
+      d.colors !== undefined ? JSON.stringify(d.colors) : null,
+      req.params.id
+    );
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('Error updating product:', err);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 app.delete('/api/products/:id', (req, res) => {

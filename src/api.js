@@ -17,9 +17,16 @@ async function request(method, path, body) {
   return res.json();
 }
 
-const get  = (path, params) => {
-  const url = params ? `${path}?${new URLSearchParams(params)}` : path;
-  return request('GET', url);
+const get = (path, params) => {
+  if (!params) return request('GET', path);
+  const cleanParams = {};
+  for (const [k, v] of Object.entries(params)) {
+    if (v !== undefined && v !== null && v !== '' && v !== 'null') {
+      cleanParams[k] = v;
+    }
+  }
+  const qs = Object.keys(cleanParams).length ? `?${new URLSearchParams(cleanParams)}` : '';
+  return request('GET', `${path}${qs}`);
 };
 const post   = (path, body) => request('POST', path, body);
 const put    = (path, body) => request('PUT', path, body);
