@@ -143,9 +143,7 @@ app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
 // Serve built frontend in production
 const DIST = path.join(__dirname, '..', 'dist');
-if (fs.existsSync(DIST)) {
-  app.use(express.static(DIST));
-}
+app.use(express.static(DIST));
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 const parseJSON = (v, fallback) => { try { return JSON.parse(v) || fallback; } catch { return fallback; } };
@@ -461,13 +459,16 @@ app.get('/api/stats', (req, res) => {
 });
 
 // ─── SPA fallback ─────────────────────────────────────────────────────────────
-if (fs.existsSync(DIST)) {
-  app.use((req, res, next) => {
-    if (req.method === 'GET' && !req.path.startsWith('/api')) {
-      return res.sendFile(path.join(DIST, 'index.html'));
+app.use((req, res, next) => {
+  if (req.method === 'GET' && !req.path.startsWith('/api')) {
+    const indexPath = path.join(DIST, 'index.html');
+    if (fs.existsSync(indexPath)) {
+      return res.sendFile(indexPath);
     }
-    next();
-  });
-}
+  }
+  next();
+});
 
-app.listen(PORT, () => console.log(`✅ Walid Shop Server running on port ${PORT}`));
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`✅ Walid Shop Server running on 0.0.0.0:${PORT}`);
+});
