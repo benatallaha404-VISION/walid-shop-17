@@ -3,6 +3,7 @@ import React from 'react';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { AppProvider } from './context/AppContext.jsx';
 import Header from './components/Header.jsx';
+import MobileBottomNav from './components/MobileBottomNav.jsx';
 import ToastContainer from './components/Toast.jsx';
 import ShopPage from './pages/ShopPage.jsx';
 import ProductDetailPage from './pages/ProductDetailPage.jsx';
@@ -15,6 +16,7 @@ function AppLayout({ children }) {
     <>
       <Header />
       {children}
+      <MobileBottomNav />
       <ToastContainer />
     </>
   );

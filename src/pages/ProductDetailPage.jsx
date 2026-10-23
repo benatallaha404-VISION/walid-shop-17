@@ -241,6 +241,35 @@ export default function ProductDetailPage() {
             </button>
           </div>
         </div>
+
+        {/* Mobile Sticky Purchase Bar */}
+        <div className="product-mobile-sticky-bar">
+          <div className="mobile-bar-price">
+            <span className="mobile-bar-curr-price">{product.price?.toLocaleString()} DZD</span>
+            {product.old_price && (
+              <span className="mobile-bar-old-price">{product.old_price?.toLocaleString()} DZD</span>
+            )}
+          </div>
+          <div className="mobile-bar-actions">
+            <button
+              className="btn btn-outline mobile-bar-cart-btn"
+              onClick={handleAddToCart}
+              disabled={product.stock === 0}
+              id="mobile-sticky-add-cart"
+              title="Ajouter au panier"
+            >
+              <ShoppingBag size={17} />
+            </button>
+            <button
+              className="btn btn-primary mobile-bar-buy-btn"
+              onClick={() => { handleAddToCart(); navigate('/checkout'); }}
+              disabled={product.stock === 0}
+              id="mobile-sticky-buy-now"
+            >
+              Commander الآن
+            </button>
+          </div>
+        </div>
       </div>
     </main>
   );

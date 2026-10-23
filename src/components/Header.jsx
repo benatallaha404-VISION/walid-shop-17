@@ -53,10 +53,21 @@ export default function Header() {
 
           {/* Actions */}
           <div className="header-actions">
-            {/* Contact info button */}
+            {/* Mobile search toggle */}
+            <button
+              className="icon-btn mobile-search-btn"
+              onClick={() => setMobileMenuOpen(v => !v)}
+              aria-label="Rechercher"
+              id="mobile-search-toggle"
+              title="Rechercher"
+            >
+              {mobileMenuOpen ? <X size={19} /> : <Search size={19} />}
+            </button>
+
+            {/* Contact info button - desktop */}
             <Link
               to="/contact"
-              className="icon-btn"
+              className="icon-btn header-contact-desktop"
               aria-label="Contact"
               id="header-contact-btn"
               title="Contactez-nous — تواصل معنا"
@@ -85,17 +96,6 @@ export default function Header() {
             >
               <ShoppingBag size={19} />
               {cartCount > 0 && <span className="badge">{cartCount > 9 ? '9+' : cartCount}</span>}
-            </button>
-
-            {/* Mobile search toggle */}
-            <button
-              className="icon-btn mobile-search-btn"
-              onClick={() => setMobileMenuOpen(v => !v)}
-              aria-label="Rechercher"
-              id="mobile-search-toggle"
-              title="Rechercher"
-            >
-              {mobileMenuOpen ? <X size={20} /> : <Search size={20} />}
             </button>
           </div>
         </div>
